@@ -1,0 +1,3 @@
+package com.yjiyun.chatflows.manager;
+import com.yjiyun.chatflows.manager.observability.AgentLoopExporter;
+public final class AgentLoopContractSelfTest {public static void main(String[] args){String authorization=AgentLoopExporter.roaHeaders("https://agentloop.example/v1/spans?project=chatflows","{}","ak","secret","Wed, 12 Aug 2026 00:00:00 GMT","nonce-1").get("authorization");if(!"acs ak:Dn9WN1VsTfp4d7E4IbyQCl/XFy8=".equals(authorization))throw new AssertionError("Node/Java ROA mismatch: "+authorization);System.out.println("[PASS] Java and Node AgentLoop exporters share ROA canonical signing contract");}}

@@ -1,0 +1,15 @@
+schemaVersion: agentteams.identity/v1
+identities:
+  - { id: agent-manager, kind: ExternalOrchestrator, role: 入口接待与三平面资源编排, input: 用户诉求, output: CR 与顶层 spec.md, boundary: 不做业务裁决且不直调 Nest }
+  - { id: chatflows-leader, kind: Worker, role: 契约校验和 gate 路由, input: Worker result.md, output: 下一任务与 run 状态, boundary: artifact 只读且不得重算 gate }
+  - { id: chatflows-coordinator, kind: Human, role: 需求提供和高危审批, input: 追问与审批单, output: 回答或 allow/deny, boundary: 唯一高危批准角色 }
+  - { id: wizard-intent, kind: Worker, role: P1 向导与意图分诊, input: 用户答复和 wizard_state, output: Phase1Result 与 Triage, boundary: 只可见 chatflows-p1 }
+  - { id: template-match, kind: Worker, role: P2 模板匹配, input: Triage, output: MatchResult, boundary: 只可见 chatflows-p2 }
+  - { id: template-personalize, kind: Worker, role: P3 模板个性化, input: MatchResult 和标注模板, output: Guidance 和个性化包, boundary: 只可见 chatflows-p3 }
+  - { id: flow-generate, kind: Worker, role: P3b 工作流生成, input: Triage 和精简上下文, output: flow_yaml 和 11 项自检, boundary: 自检失败不得进 P4 }
+  - { id: flow-import-run, kind: Worker, role: P4 导入绑定试运行, input: 已自检产物和审批, output: import/binding/dry_run, boundary: 副作用必须经 Human }
+  - { id: blueprint-compose, kind: Worker, role: P3C 专家派发与 Blueprint 合成, input: Triage 和四专家结果, output: DRAFT AgentBlueprint, boundary: 13 项自检失败不得 STAGED }
+  - { id: persona-expert, kind: Worker, role: 人格与沟通风格专家, input: Guidance, output: persona.json, boundary: 只写 persona 结果且冲突优先级最低 }
+  - { id: business-expert, kind: Worker, role: 业务骨架与边界专家, input: Triage 和 Guidance, output: business.json, boundary: 只写 business 结果且冲突优先级最高 }
+  - { id: skill-expert, kind: Worker, role: Skill 选型与起草专家, input: 行业与场景, output: skill.json, boundary: Skill 市场只读且不得 promote }
+  - { id: tool-expert, kind: Worker, role: MCP 工具与权限专家, input: Skill 依赖和租户, output: tool.json, boundary: 只用 Higress 且不得持真凭证 }

@@ -1,0 +1,36 @@
+# 连接器 / SCRM 能力枚举
+# meta.connectors_required、connectors_optional、tenant.connectors 必须取自本表 id
+# 与自有 SCRM SaaS、Coze 插件能力对齐后可继续追加
+
+connectors:
+  - id: scrm_session
+    name: SCRM 会话
+    description: 企微/SCRM 会话收发与会话上下文
+
+  - id: task_board
+    name: 任务板
+    description: 跟进任务、待办恢复
+
+  - id: intent_queue
+    name: 意图队列
+    description: 意图分流排队/异步处理
+
+  - id: shared_profile
+    name: 共享客户档案
+    description: 跨节点客户资料读写
+
+  - id: knowledge_base
+    name: 知识库
+    description: FAQ / 资料检索
+
+  - id: reco_rule_context
+    name: 推品规则上下文
+    description: 推荐档位、商品库与规则
+
+  - id: human_notify
+    name: 转人工通知
+    description: "@HR / 通知对接人/群"
+
+  - id: diagnosis_record
+    name: 肌肤/诊断档案
+    description: 可选；美妆问诊记录等

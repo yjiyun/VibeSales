@@ -1,0 +1,16 @@
+apiVersion: kustomize.config.k8s.io/v1beta1
+kind: Kustomization
+resources:
+  - workers/00-team-leader.yaml
+  - workers/10-wizard-intent.yaml
+  - workers/20-template-match.yaml
+  - workers/30-template-personalize.yaml
+  - workers/31-flow-generate.yaml
+  - workers/32-blueprint-compose.yaml
+  - workers/40-flow-import-run.yaml
+  - workers/50-persona-expert.yaml
+  - workers/51-business-expert.yaml
+  - workers/52-skill-expert.yaml
+  - workers/53-tool-expert.yaml
+  - team.yaml
+  - humans.yaml

@@ -1,0 +1,14 @@
+VibeSales
+Copyright 2026 the original author or authors.
+
+This product includes and integrates components built on top of AgentScope Java:
+https://github.com/agentscope-ai/agentscope-java
+
+AgentScope Java is licensed under the Apache License, Version 2.0.
+Copyright 2024-2026 the original author or authors.
+
+In this repository, the directories `agent-manager/` and `agent-runtime/`
+use AgentScope Java libraries and related architectural patterns for
+orchestration and runtime execution.
+
+This NOTICE file is provided for attribution and informational purposes only.

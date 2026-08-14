@@ -1,0 +1,11 @@
+package com.yjiyun.chatflows.manager.agent;
+import com.yjiyun.chatflows.manager.OrchestratorAgent; import com.yjiyun.chatflows.manager.matrix.MatrixClient; import io.agentscope.core.tool.*;
+public final class OrchestrationTools {
+ private final OrchestratorAgent orchestrator; private final MatrixClient matrix; private final String teamYaml;
+ public OrchestrationTools(OrchestratorAgent orchestrator,MatrixClient matrix,String teamYaml){this.orchestrator=orchestrator;this.matrix=matrix;this.teamYaml=teamYaml;}
+ @Tool(name="declare_team",description="Declare the fixed chatflows-build-team Team CR") public String declareTeam(@ToolParam(name="kind")String kind,@ToolParam(name="name")String name,@ToolParam(name="yaml")String yaml)throws Exception{if(!"Team".equals(kind)||!"chatflows-build-team".equals(name)||!teamYaml.equals(yaml))throw new IllegalArgumentException("only the configured fixed Team is allowed");orchestrator.apply(kind,name,teamYaml);return "declared "+kind+"/"+name;}
+ @Tool(name="dispatch_phase",description="Dispatch P1 once to the Team Leader; the Leader owns all later business routing") public String dispatchPhase(@ToolParam(name="room_id")String room,@ToolParam(name="run_id")String run,@ToolParam(name="client_code")String client,@ToolParam(name="phase")String phase,@ToolParam(name="spec")String spec)throws Exception{if(!"P1".equals(phase))throw new IllegalArgumentException("external orchestrator may dispatch only P1");orchestrator.dispatch(room,run,client,phase,spec);return "dispatched "+phase;}
+ @Tool(name="await_leader",description="Suspend until the Team Leader writes the task result",externalTool=true,readOnly=true) public String awaitLeader(@ToolParam(name="room_id")String room,@ToolParam(name="run_id")String run,@ToolParam(name="client_code")String client){return "external";}
+ @Tool(name="ask_human",description="Ask a Human to make an orchestration decision") public String askHuman(@ToolParam(name="room_id")String room,@ToolParam(name="run_id")String run,@ToolParam(name="question")String question)throws Exception{matrix.join(room);matrix.send(room,"HUMAN_REQUIRED run_id="+run+" question="+question);return "asked";}
+ public boolean wasDispatched(String runId){return orchestrator.wasDispatched(runId);}
+}

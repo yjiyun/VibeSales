@@ -1,0 +1,15 @@
+.git
+**/.git
+**/.DS_Store
+**/node_modules
+**/dist
+**/target
+**/logs
+**/var
+**/.env
+**/.env.*
+!**/.env.example
+.claude
+.workbuddy
+tmp
+3chat截图

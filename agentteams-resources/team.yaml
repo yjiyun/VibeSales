@@ -1,0 +1,6 @@
+apiVersion: agentteams.io/v1beta1
+kind: Team
+metadata: { name: chatflows-build-team }
+spec:
+  leader: chatflows-leader
+  workers: [wizard-intent, template-match, template-personalize, flow-generate, blueprint-compose, flow-import-run, persona-expert, business-expert, skill-expert, tool-expert]

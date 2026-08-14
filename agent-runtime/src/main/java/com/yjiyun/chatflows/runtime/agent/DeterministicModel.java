@@ -1,0 +1,3 @@
+package com.yjiyun.chatflows.runtime.agent;
+import io.agentscope.core.message.TextBlock; import io.agentscope.core.model.*; import java.util.*; import reactor.core.publisher.Flux;
+public final class DeterministicModel implements Model { public Flux<ChatResponse> stream(List<io.agentscope.core.message.Msg> m,List<ToolSchema> t,GenerateOptions o){String last=m.isEmpty()?"":m.get(m.size()-1).getTextContent();return Flux.just(ChatResponse.builder().content(List.of(TextBlock.builder().text("DRY_RUN_OK: "+last).build())).usage(new ChatUsage(1,1,0)).finishReason("stop").build());} public String getModelName(){return "deterministic-test";} public int getContextWindowSize(){return 32768;} }

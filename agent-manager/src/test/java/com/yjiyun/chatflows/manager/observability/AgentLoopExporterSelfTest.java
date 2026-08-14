@@ -1,0 +1,11 @@
+package com.yjiyun.chatflows.manager.observability;
+import java.nio.file.*; import java.util.Map;
+public final class AgentLoopExporterSelfTest {public static void main(String[] args)throws Exception{String canary="agentloop-manager-secret-canary",body=AgentLoopExporter.envelope("agent-manager.plan","00-0123456789abcdef0123456789abcdef-0123456789abcdef-01",Map.of("agentteams.run_id","run-1","agentteams.agent","orchestrator","agentteams.orchestration.planner","llm","gen_ai.usage.input_tokens",3,"gen_ai.usage.output_tokens",2,"agentteams.usage.scope","run","agentteams.worker_usage_available",false,"HIGRESS_CONSUMER_TOKEN",canary));if(!body.contains("\"agentteams.run_id\":\"run-1\"")||!body.contains("\"gen_ai.usage.input_tokens\":3")||!body.contains("\"agentteams.worker_usage_available\":false")||!body.contains("\"traceparent\"")||body.contains(canary)||body.contains("HIGRESS_CONSUMER_TOKEN"))throw new AssertionError(body);if(args.length>0)Files.writeString(Path.of(args[0]),body);
+ Map<String,String> h=AgentLoopExporter.roaHeaders("https://agentloop.example/v1/spans?project=demo","{}","test-key","test-secret","Wed, 13 Aug 2026 07:30:00 GMT","nonce-1");if(!"acs test-key:d/N2sblTLy+lcGpke7fF52+W5Vo=".equals(h.get("authorization"))||!"2026-05-20".equals(h.get("x-acs-version")))throw new AssertionError(h);
+ new AgentLoopExporter(Map.of("AGENTLOOP_EXPORTER","off"));new AgentLoopExporter(Map.of("AGENTLOOP_EXPORTER","stderr","AGENTLOOP_SAMPLE_RATE","0.5"));
+ reject(Map.of("AGENTLOOP_EXPORTER","enabled"),"AGENTLOOP_EXPORTER must be off, stderr or on");
+ reject(Map.of("AGENTLOOP_EXPORTER","stderr","AGENTLOOP_SAMPLE_RATE","1.5"),"AGENTLOOP_SAMPLE_RATE must be 0.0..1.0");
+ reject(Map.of("AGENTLOOP_EXPORTER","on"),"AgentLoop on mode requires endpoint/access key/access secret");
+ System.out.println("[PASS] manager AgentLoop filters credentials, discloses unavailable Worker usage + ROA vector + off/stderr/on modes");}
+ private static void reject(Map<String,String> env,String expected){try{new AgentLoopExporter(env);}catch(IllegalStateException e){if(!expected.equals(e.getMessage()))throw new AssertionError("unexpected rejection: "+e.getMessage());return;}throw new AssertionError("exporter accepted invalid config: "+env);}
+}

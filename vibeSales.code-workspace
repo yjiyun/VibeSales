@@ -1,0 +1,12 @@
+{
+	"folders": [
+		{
+                     "path": "agent-core"
+		},
+		{
+			"path": "."
+		}],
+	"settings": {
+		"java.configuration.updateBuildConfiguration": "automatic"
+	}
+}

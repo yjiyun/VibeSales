@@ -1,0 +1,24 @@
+{
+  "name": "agent-console",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "scripts": {
+    "dev": "vite",
+    "build": "vite build",
+    "preview": "vite preview",
+    "test:contract": "node scripts/test-console-contract.mjs",
+    "test:ui": "node scripts/test-console-ui.mjs",
+    "test:p3c-e2e": "node scripts/test-console-p3c-e2e.mjs"
+  },
+  "dependencies": {
+    "element-plus": "2.14.3",
+    "vue": "3.5.40",
+    "vue-element-plus-x": "2.0.3"
+  },
+  "devDependencies": {
+    "@vitejs/plugin-vue": "6.0.8",
+    "playwright": "1.62.1",
+    "vite": "8.1.5"
+  }
+}

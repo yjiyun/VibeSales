@@ -1,0 +1,80 @@
+# 业务目标 / 业务场景（向导：选完行业后的多选）
+# 说明见 docs/产品设计.md §8（为什么不放进 scenes.yaml）
+#
+# 与 scenes.yaml 的区别：
+#   - business_goals：用户「希望 AI 先帮处理哪类事」（跨行业、可多选）
+#   - scenes：装机模板科室（意图分诊 → 硬过滤），有限且与 Chatflow meta 对齐
+#
+# capability_hints → 写入 triage.known_slots.desired_capabilities（须 ∈ capabilities.yaml）
+# agent_family_hint → 推断 agent_family（须 ∈ agent_families.yaml）
+
+business_goals:
+  - id: intake_qualify
+    name: 接待新客户咨询，并判断购买意向
+    description: 新客进线接待、初步意向判断与分流
+    capability_hints: [intent_detect, slot_fill, lead_capture]
+    agent_family_hint: sales
+    summary_role_hint: 售前接待与意向判断
+
+  - id: present_recommend
+    name: 介绍产品/服务，并推荐合适方案
+    description: 产品说明、方案对比与受控推荐
+    capability_hints: [product_recommend, faq_retrieve]
+    agent_family_hint: sales
+    summary_role_hint: 产品介绍与方案推荐
+
+  - id: faq_deflect
+    name: 回答客户常见问题，减少流失和重复咨询
+    description: 高频 FAQ 自动答复，降低重复进线
+    capability_hints: [faq_retrieve, faq_route, oos_guard]
+    agent_family_hint: customer_success
+    summary_role_hint: 常见问题答疑
+
+  - id: convert_repurchase
+    name: 引导客户下单、预约、留资或促成复购
+    description: 转化动作：下单/预约/留资/复购推动
+    capability_hints: [lead_capture, product_recommend, slot_fill]
+    agent_family_hint: sales
+    summary_role_hint: 转化与留资促成
+
+  - id: traffic_intake
+    name: 承接广告、内容平台或官网流量
+    description: 投放/内容/官网进线的首接与分流
+    capability_hints: [intent_detect, lead_capture]
+    agent_family_hint: sales
+    summary_role_hint: 流量首接与分流
+
+  - id: handoff_sales
+    name: 识别高意向客户，并转给人工销售跟进
+    description: 高意向识别 + 销售转人工
+    capability_hints: [intent_detect, human_escalate, lead_capture]
+    agent_family_hint: sales
+    summary_role_hint: 高意向识别与销售转接
+
+  - id: query_status
+    name: 帮助客户查询订单、业务信息、预约或服务进度
+    description: 订单/预约/进度类查询（可无真实工具时先收集信息）
+    capability_hints: [slot_fill, faq_retrieve]
+    agent_family_hint: customer_success
+    summary_role_hint: 业务进度与信息查询
+
+  - id: guide_usage
+    name: 指导客户正确使用产品或服务
+    description: 使用引导、操作说明、上手辅导
+    capability_hints: [faq_retrieve, slot_fill]
+    agent_family_hint: customer_success
+    summary_role_hint: 产品使用指导
+
+  - id: complaint_soothe
+    name: 处理客户投诉，并安抚客户情绪
+    description: 投诉安抚、情绪承接与升级准备
+    capability_hints: [human_escalate, return_retain, copy_humanize]
+    agent_family_hint: customer_success
+    summary_role_hint: 投诉安抚与升级
+
+  - id: collect_escalate
+    name: 收集问题信息，并转交给人工处理
+    description: 结构化收集问题后转人工
+    capability_hints: [slot_fill, human_escalate]
+    agent_family_hint: customer_success
+    summary_role_hint: 问题收集与人工转交

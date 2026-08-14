@@ -1,0 +1,21 @@
+# 智能体家族 / 科室枚举
+# meta.agent_family、scenes[].agent_family 必须取自本表 id
+
+default: customer_success
+
+families:
+  - id: hr_recruit
+    name: 招聘接待
+    description: 招聘、候选人接待、入职前咨询分流
+
+  - id: customer_success
+    name: 客户成功 / 客服
+    description: 售后、咨询、留存、转人工等客成场景（可兼轻量推品）
+
+  - id: sales
+    name: 销售
+    description: 以获客、转化、推品为主的销售专家（预留）
+
+  - id: operations
+    name: 运营
+    description: 活动、社群、内容运营类助手（预留）

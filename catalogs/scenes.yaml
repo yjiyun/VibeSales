@@ -1,0 +1,125 @@
+# 装机场景目录（意图分诊唯一可选集合）
+# 说明见 docs/CATALOGS-guide.md · docs/工程架构.md §9.1
+#
+# 每个 scene 可声明 slots + ask_order 驱动「粗补向导」（见 docs/P1-拆分.md §4）。
+#   - slots[].source 只能引用 catalogs 词表名：industries / agent_families / capabilities / channels
+#   - slots[].multi=true 表示多选；required=true 表示粗补必收
+#   - ask_order 为追问顺序（信息增益优先）；WizardService 据此算 next_ask
+#   - typical_prompts 复用为向导「示例回复」
+
+scenes:
+  - id: hr_recruit_wecom_faq
+    name: 招聘智能接待
+    summary: 招聘场景下的候选人智能接待：常见问题分流与答复，复杂问题转 HR
+    agent_family: hr_recruit
+    industries: [edu, recruiting]
+    slots:
+      - key: industry
+        label: 行业
+        source: industries
+        required: true
+        why: 决定从哪一类模板里挑
+      - key: role
+        label: 主要角色/职责
+        source: agent_families
+        required: true
+        why: 决定偏招聘接待还是客服/销售等家族
+      - key: desired_capabilities
+        label: 希望具备的能力
+        source: capabilities
+        multi: true
+        required: false
+        why: 决定命中模板能力是否覆盖你的诉求
+    ask_order: [industry, role, desired_capabilities]
+    typical_prompts:
+      - 我要搭建一个招聘工作流
+      - 做一个招聘智能接待，自动回答候选人常见问题
+      - 智校招聘，需要智能体接待候选人咨询
+    status: active
+
+  - id: beauty_wecom_cs
+    name: 美妆企微销售客服
+    summary: 美妆/个护企微销售与客服：日常问题解答、受控推品、复杂情况转人工
+    agent_family: customer_success
+    industries: [beauty, cosmetics]
+    slots:
+      - key: industry
+        label: 行业
+        source: industries
+        required: true
+        why: 决定从哪一类模板里挑
+      - key: role
+        label: 主要角色/职责
+        source: agent_families
+        required: true
+        why: 决定偏客服/销售/招聘等家族
+      - key: desired_capabilities
+        label: 希望具备的能力
+        source: capabilities
+        multi: true
+        required: true
+        why: 决定命中模板能力是否覆盖你的诉求
+    ask_order: [industry, role, desired_capabilities]
+    typical_prompts:
+      - 我需要一个美妆行业的销售专家，既能解决客户日常问题，又能向客户推荐产品
+      - 帮我搭建企微美肤客服，要推品和售后
+      - 做一个美妆销售客服工作流
+    status: active
+
+  - id: agri_drone_wecom_cs
+    name: 农业无人机企微客服
+    summary: 植保无人机/农机企微客服：故障排查、操作指引、质保售后、飞行法规问答，复杂/情绪场景转人工
+    agent_family: customer_success
+    industries: [agriculture]
+    slots:
+      - key: industry
+        label: 行业
+        source: industries
+        required: true
+        why: 决定从哪一类模板里挑
+      - key: role
+        label: 主要角色/职责
+        source: agent_families
+        required: true
+        why: 决定偏客服/销售/招聘等家族
+      - key: desired_capabilities
+        label: 希望具备的能力
+        source: capabilities
+        multi: true
+        required: true
+        why: 决定命中模板能力是否覆盖你的诉求
+    ask_order: [industry, role, desired_capabilities]
+    typical_prompts:
+      - 我要搭建一个农业无人机售后客服工作流
+      - 做一个植保无人机企微客服，能答故障排查和质保，复杂的转人工
+      - 极飞客服，要知识库问答、下班兜底和转人工通知
+    status: active
+
+  - id: edu_abroad_wecom_sales
+    name: 留学咨询企微销售接待
+    summary: 留学咨询企微销售助手：FAQ 答疑、背景/意向槽位追问、高意向或敏感场景转规划老师
+    agent_family: sales
+    industries: [edu]
+    slots:
+      - key: industry
+        label: 行业
+        source: industries
+        required: true
+        why: 决定从哪一类模板里挑
+      - key: role
+        label: 主要角色/职责
+        source: agent_families
+        required: true
+        why: 决定偏销售接待还是客服/招聘等家族
+      - key: desired_capabilities
+        label: 希望具备的能力
+        source: capabilities
+        multi: true
+        required: true
+        why: 决定命中模板能力是否覆盖你的诉求
+    ask_order: [industry, role, desired_capabilities]
+    typical_prompts:
+      - 我要搭建一个留学咨询销售助手
+      - 做一个新东方留学企微接待，能答费用流程材料，高意向转规划老师
+      - 留学销售工作流，要 FAQ、画像追问和转人工
+    status: active

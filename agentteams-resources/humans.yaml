@@ -1,0 +1,7 @@
+apiVersion: agentteams.io/v1beta1
+kind: Human
+metadata: { name: chatflows-coordinator }
+spec:
+  description: 向导用户与高危动作审批人
+  permissionLevel: 2
+  accessibleTeams: [chatflows-build-team]

@@ -1,0 +1,16 @@
+# 渠道枚举
+# meta.channels、triage.channel 必须取自本表 id
+# meta.channels 为空或缺省时，loader 使用 default
+
+default: wecom
+
+channels:
+  - id: wecom
+    name: 企业微信
+    description: 企微私聊/客户联系人等（当前主渠道）
+
+  - id: official_account
+    name: 公众号（预留）
+
+  - id: web
+    name: 网页访客（预留）

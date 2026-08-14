@@ -1,0 +1,3 @@
+package com.yjiyun.chatflows.manager;
+import java.net.URI; import java.net.http.*; import java.time.Duration;
+public final class ManagerHealthProbe { public static void main(String[] args)throws Exception{String token=System.getenv("MANAGER_AUTH_TOKEN"),port=System.getenv().getOrDefault("MANAGER_PORT","8090");HttpRequest request=HttpRequest.newBuilder(URI.create("http://127.0.0.1:"+port+"/api/v1/health")).timeout(Duration.ofSeconds(4)).header("Authorization","Bearer "+token).header("X-Role","user").GET().build();HttpResponse<Void> response=HttpClient.newHttpClient().send(request,HttpResponse.BodyHandlers.discarding());if(response.statusCode()!=200)throw new IllegalStateException("manager health HTTP "+response.statusCode());} }

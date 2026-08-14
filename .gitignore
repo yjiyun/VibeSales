@@ -1,0 +1,66 @@
+# --- GitHub 脱敏提交默认不包含：docs/ flows/ PPT/ 等例外目录 ---
+
+# 本机 / 编辑器
+.DS_Store
+**/.DS_Store
+*.swp
+*.swo
+.idea/
+.vscode/
+.cursor/
+
+# Claude 本机权限（勿入库）
+.claude/settings.local.json
+
+# 独立实现仓/子仓（不纳入本仓）
+agent-core/
+
+# 模板草稿与压缩包（体积大，按需本地放置；见 flows/README.md）
+flows/Chatflow-*/
+flows/yunflow-*/
+flows/*.zip
+*.zip
+3chat截图/
+tmp/
+AI 产品形态设计.zip
+
+# 环境与密钥
+.env
+.npmrc
+# deploy/ 下的集成环境凭证：文件名不以 .env 结尾，上面两条盖不住，必须单列。
+# v4 合并时 .gitignore 取 v3 底本，这条主线规则漏了，导致该文件一度变成可提交状态。
+deploy/agentteams/integration.env
+.env.*
+!.env.example
+*.pem
+docs/agentteams/*.env.local
+
+# Node / 构建产物（若误落在根下）
+node_modules/
+dist/
+*.log
+logs/
+*.tsbuildinfo
+agent-manager/target/
+agent-runtime/target/
+var/
+
+# docs 转 submodule 时的临时备份（若残留）
+.docs-backing/
+
+agent-runtime/workspace
+
+# 开源脱敏与核对清单
+VibeSalesProd-opensource-sanitization-checklist.md
+sanitize-for-github.js
+
+# --- 开源脱敏（sanitize-for-github.js 维护，勿手工删除） ---
+docs/
+flows/
+PPT/
+.workbuddy/
+yuque/
+.claude/plans/
+.claude/.write_test
+*.db
+agent-console/package-lock.json

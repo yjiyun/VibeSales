@@ -1,0 +1,62 @@
+# 跨工作流通用能力积木（逐步沉淀）
+# meta.capabilities、triage.known_slots.desired_capabilities 必须取自本表 id
+# 新增能力：先追加本文件，再写入各模板 meta
+
+capabilities:
+  # --- 已在智校 / 谷雨出现 ---
+  - id: intent_detect
+    name: 进线意图识别
+    description: 对用户消息做意图/类别判断
+
+  - id: faq_route
+    name: FAQ 类别路由
+    description: 按固定问答类别分流（如 Q1–Q7）
+
+  - id: faq_retrieve
+    name: 知识库检索答复
+    description: 基于知识包检索并生成答复
+
+  - id: slot_fill
+    name: 槽位收集
+    description: 多轮追问补齐业务槽位
+
+  - id: product_recommend
+    name: 受控推品
+    description: 按规则/档位推荐商品
+
+  - id: allergy_intake
+    name: 过敏信息收集
+    description: 过敏史等安全相关采集
+
+  - id: return_retain
+    name: 退换挽留
+    description: 退换货场景下的挽留与引导
+
+  - id: task_recover
+    name: 任务恢复
+    description: 未完成任务的接续
+
+  - id: instance_continue
+    name: 实例续聊
+    description: 跨轮/跨会话续接
+
+  - id: human_escalate
+    name: 转人工
+    description: 升级人工并通知对接人
+
+  - id: copy_humanize
+    name: 话术拟人化
+    description: 回复语气润色
+
+  - id: oos_guard
+    name: 超范围护栏
+    description: 拒答或转人工超出业务范围的问题
+
+  # --- 预留（常见装机能力，尚未挂模板也可先占位）---
+  - id: timed_followup
+    name: 定时追问
+    description: 超时未回复则追问
+
+  - id: lead_capture
+    name: 线索采集
+    description: 留资、意向登记
