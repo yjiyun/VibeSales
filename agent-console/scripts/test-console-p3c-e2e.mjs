@@ -1,8 +1,9 @@
 /**
  * Console 浏览器级 P3C 全流程（Playwright / Chromium headless）
  *
- * 读取 agent-core/fixtures/wizard-e2e/p3c-guyu-wecom.yaml，从向导入口走完：
- * P1 → P2 → P3C 专家团 → 向导内确认发布 → 右侧沙盒必测冒烟（含附录 B 说法）。
+ * 默认读取 agent-core/fixtures/wizard-e2e/p3c-guyu-wecom.yaml；
+ * CONSOLE_P3C_FIXTURE 可换成 p3c-jifei-agri.yaml。从向导入口走完：
+ * P1 → P2 → P3C 专家团 → 向导内确认发布 → 右侧沙盒必测冒烟。
  *
  * 起停见 scripts/run-console-p3c-e2e.sh。现有 test-console-ui.mjs 仍作 P3/契约烟测，不改。
  */
@@ -13,6 +14,7 @@ import path from 'node:path';
 import { createRequire } from 'node:module';
 import { fileURLToPath } from 'node:url';
 import { chromium } from 'playwright';
+import { formatHtml, summarizeStore } from '../../scripts/inspect-run.mjs';
 
 const require = createRequire(import.meta.url);
 const { parse: parseYaml } = require('../../agent-core/node_modules/yaml');
@@ -155,10 +157,11 @@ try {
   });
   page.on('requestfailed', (request) => failedRequests.push(`${request.method()} ${request.url()}`));
 
-  await page.addInitScript(([wizard, pipeline, runtime, role, who]) => {
+  await page.addInitScript(([wizard, pipeline, runtime, runtimeAdmin, role, who]) => {
     localStorage.setItem('agent-console.wizard-token', wizard);
     localStorage.setItem('agent-console.pipeline-token', pipeline);
     localStorage.setItem('agent-console.runtime-token', runtime);
+    localStorage.setItem('agent-console.runtime-admin-token', runtimeAdmin);
     localStorage.setItem('agent-console.role', role);
     localStorage.setItem('agent-console.actor', who);
     localStorage.setItem('agent-console.page', 'wizard');
@@ -168,7 +171,7 @@ try {
     const style = document.createElement('style');
     style.textContent = '*,*::before,*::after{transition:none!important;animation:none!important}';
     document.documentElement.appendChild(style);
-  }, [wizardToken, pipelineToken, runtimeToken, 'admin', actor]);
+  }, [wizardToken, pipelineToken, runtimeToken, process.env.CONSOLE_UI_RUNTIME_ADMIN_TOKEN ?? '', 'admin', actor]);
 
   await page.goto(base + '/', { waitUntil: 'domcontentloaded' });
   await page.getByRole('heading', { name: '智能体助手' }).waitFor();
@@ -279,6 +282,7 @@ try {
   await result.getByText('向导已完成').waitFor({ timeout: 30_000 });
   await result.getByText(`闸门 ${s4.expect.gate}`).waitFor();
   await page.locator('.wz-header').getByText('DONE', { exact: true }).waitFor();
+  await page.locator('.wz-header').getByText('已完成', { exact: true }).waitFor();
   await shot(page, 'wizard-result-gate-pass', result);
 
   await result.getByRole('button', { name: /查看 Phase1Result JSON/ }).click();
@@ -300,11 +304,13 @@ try {
   mark('p2-match');
 
   const build = step('result');
-  const buildButton = result.getByRole('button', { name: /开始生成（local）/ });
+  const buildButton = result.getByRole('button', { name: /开始生成（(local|platform)）/ });
   await buildButton.waitFor();
+  const buttonLabel = (await buildButton.innerText()).trim();
+  const isPlatform = /platform/.test(buttonLabel);
   await buildButton.click();
   const publish = page.locator('.wz-publish').last();
-  await publish.getByText('WAITING_HUMAN').waitFor({ timeout: 120_000 });
+  await publish.getByText('WAITING_HUMAN').waitFor({ timeout: isPlatform ? 1_800_000 : 120_000 });
   await publish.getByText('P3C').waitFor();
   await publish.getByRole('button', { name: '确认发布' }).waitFor();
   runId = await page.evaluate(() => localStorage.getItem('agent-console.last-run-id'));
@@ -329,6 +335,39 @@ try {
       afterBuild.artifacts.some((item) => item.kind === kind),
       `生成结果缺 ${kind}`,
     );
+  }
+
+  const healthRes = await fetch(`${nestBase}/api/health`, {
+    headers: {
+      authorization: `Bearer ${wizardToken}`,
+      'x-role': 'admin',
+      'x-actor': actor,
+    },
+  });
+  const health = await healthRes.json().catch(() => ({}));
+  const inspectorOn = health.artifact_inspector === true;
+  if (inspectorOn) {
+    const artifactTab = page.locator('.wz-runtime-tabs').getByRole('tab', { name: '产物' });
+    await artifactTab.click();
+    await page.locator('.wz-artifacts').waitFor();
+    await shot(page, 'wizard-artifacts-p3c', page.locator('.wz-artifacts'));
+    mark('artifacts');
+    const expertTab = page.locator('.wz-runtime-tabs').getByRole('tab', { name: '专家团' });
+    await expertTab.click();
+    const expertRoom = page.locator('.wz-expert-room');
+    await expertRoom.waitFor();
+    const expertMode = await expertRoom.getAttribute('data-mode');
+    if (expertMode === 'local') {
+      assert.match(
+        await expertRoom.locator('[data-empty="local"]').innerText(),
+        /不向 Matrix 派活/,
+        'local 专家团应明示空房间是预期',
+      );
+    } else {
+      assert.equal(expertMode, 'platform', '专家团 data-mode 应为 local 或 platform');
+    }
+    await shot(page, 'wizard-expert-room-p3c', expertRoom);
+    mark('expert-room');
   }
 
   await publish.getByRole('button', { name: '确认发布' }).click();
@@ -421,6 +460,15 @@ try {
   assert.deepEqual(unexpected, [], `浏览器 console 有预期外报错：${unexpected.join(' | ')}`);
 
   const elapsedMs = Date.now() - startedAt;
+  const storeFile = process.env.CONSOLE_P3C_STORE_FILE || process.env.ARTIFACT_STORE_FILE || '';
+  let inspectorDump = null;
+  if (runId && storeFile && fs.existsSync(storeFile)) {
+    const summary = summarizeStore(JSON.parse(fs.readFileSync(storeFile, 'utf8')), runId);
+    fs.writeFileSync(path.join(shots, 'inspector.json'), JSON.stringify(summary, null, 2));
+    fs.writeFileSync(path.join(shots, 'inspector.html'), formatHtml(summary));
+    inspectorDump = { html: 'inspector.html', json: 'inspector.json' };
+    captured.push('inspector.html', 'inspector.json');
+  }
   fs.writeFileSync(
     path.join(shots, 'manifest.json'),
     JSON.stringify(
@@ -434,6 +482,7 @@ try {
         runtime_agent_id: runtimeAgentId,
         agent_chat: agentChat,
         chat_only: chatOnly,
+        inspector: inspectorDump,
         chat: chatReplies,
         timings,
         elapsed_ms: elapsedMs,

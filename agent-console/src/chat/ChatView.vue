@@ -39,8 +39,24 @@ watch(
   },
 );
 
+function newSessionId() {
+  // crypto.randomUUID 只在安全上下文（HTTPS / localhost）可用；测试环境常年走
+  // http://<内网IP>:5173，浏览器里这个 API 直接不存在，取值即报
+  // TypeError: crypto.randomUUID is not a function。回退到 getRandomValues
+  // （不安全上下文里仍可用）拼接同形状字符串；runtime 只校验 [A-Za-z0-9_-]+，
+  // 不强制标准 UUID，退化格式不影响后端。
+  if (typeof crypto?.randomUUID === 'function') return crypto.randomUUID();
+  const bytes = new Uint8Array(16);
+  if (typeof crypto?.getRandomValues === 'function') crypto.getRandomValues(bytes);
+  else for (let i = 0; i < bytes.length; i += 1) bytes[i] = Math.floor(Math.random() * 256);
+  bytes[6] = (bytes[6] & 0x0f) | 0x40;
+  bytes[8] = (bytes[8] & 0x3f) | 0x80;
+  const hex = Array.from(bytes, (b) => b.toString(16).padStart(2, '0')).join('');
+  return `${hex.slice(0, 8)}-${hex.slice(8, 12)}-${hex.slice(12, 16)}-${hex.slice(16, 20)}-${hex.slice(20)}`;
+}
+
 function newSession() {
-  if (!sessionId.value) sessionId.value = crypto.randomUUID();
+  if (!sessionId.value) sessionId.value = newSessionId();
   return sessionId.value;
 }
 

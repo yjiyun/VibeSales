@@ -16,6 +16,7 @@ runtime_agentloop_file="$contract_temp/runtime-agentloop.json"
 
 echo "[CONTRACT] Node resources, P1, MCP, P3/P3B/P3C and Human approval"
 ( cd "$root_dir/agent-console" && npm run test:contract && npm run build )
+node "$root_dir/scripts/inspect-run.mjs" --self-test
 cd "$root_dir/agent-core"
 npm run build
 npm run test:resources
@@ -37,6 +38,7 @@ for test in ManagerSelfTest ManagerConfigSelfTest ManagerAuthSelfTest ManagerHtt
   mvn -o -q exec:java -Dexec.mainClass="com.yjiyun.chatflows.manager.$test" -Dexec.classpathScope=test
 done
 mvn -o -q exec:java -Dexec.mainClass=com.yjiyun.chatflows.manager.matrix.RestMatrixClientSelfTest -Dexec.classpathScope=test
+mvn -o -q exec:java -Dexec.mainClass=com.yjiyun.chatflows.manager.matrix.RoomTimelineSelfTest -Dexec.classpathScope=test
 mvn -o -q exec:java -Dexec.mainClass=com.yjiyun.chatflows.manager.agent.OrchestrationStoreSelfTest -Dexec.classpathScope=test
 mvn -o -q exec:java -Dexec.mainClass=com.yjiyun.chatflows.manager.agent.OrchestrationPlannerSuspendSelfTest -Dexec.classpathScope=test
 mvn -o -q exec:java -Dexec.mainClass=com.yjiyun.chatflows.manager.agent.OrchestrationPlannerFallbackSelfTest -Dexec.classpathScope=test
@@ -49,7 +51,7 @@ echo "[CONTRACT] Java runtime projection, gateway model, cross-language and repl
 cd "$root_dir/agent-runtime"
 ./build-dist.sh
 mvn -o -q test-compile
-for test in RuntimeSelfTest RuntimeGatewaySelfTest RuntimeGatewayModelSelfTest RuntimeAgentLoopSelfTest RuntimeDistributedSelfTest; do
+for test in RuntimeSelfTest InspectSelfTest RuntimeGatewaySelfTest RuntimeGatewayModelSelfTest RuntimeAgentLoopSelfTest RuntimeDistributedSelfTest; do
   mvn -o -q exec:java -Dexec.mainClass="com.yjiyun.chatflows.runtime.$test" -Dexec.classpathScope=test
 done
 mvn -o -q exec:java -Dexec.mainClass=com.yjiyun.chatflows.runtime.observability.AgentLoopExporterSelfTest -Dexec.classpathScope=test -Dexec.args="$runtime_agentloop_file"
@@ -65,7 +67,7 @@ node scripts/test-higress-chatflows-mcp-config.mjs
 node scripts/test-agentteams-preflight.mjs
 node scripts/validate-agentteams.js
 node scripts/e2e-human-approver.js --self-test
-node --check scripts/preflight-agentteams-integration.js scripts/render-agentteams-bundle.js scripts/discover-local-agentteams-env.js scripts/configure-agentteams-higress.js scripts/discover-agentteams-resources.js scripts/run-agentteams-platform-e2e.js
+node --check scripts/preflight-agentteams-integration.js scripts/render-agentteams-bundle.js scripts/discover-local-agentteams-env.js scripts/configure-agentteams-higress.js scripts/discover-agentteams-resources.js scripts/run-agentteams-platform-e2e.js scripts/configure-agentteams-leader-tools.js scripts/configure-agentteams-worker-mcp.js
 bash -n verify-all.sh verify-contracts.sh scripts/deploy-agentteams-stack.sh scripts/run-agentteams-e2e.sh scripts/run-agentteams-stack-e2e.sh scripts/test-bff-http.sh scripts/test-agentteams-apply.sh
 git diff --check
 git -C agent-core diff --check

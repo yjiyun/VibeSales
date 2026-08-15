@@ -5,12 +5,12 @@ const {execFileSync}=require('child_process');
 
 const container=process.env.AGENTTEAMS_LEADER_CONTAINER?.trim()||'agentteams-worker-chatflows-leader';
 const allowed=['health','message','filesync'];
-const forbidden=['roomflow','projectflow','taskflow'];
-const python=String.raw`
-import json,sys,time,urllib.parse,urllib.request
+const forbidden=['roomflow','projectflow','taskflow','artifact'];
+const python=`
+import json,time,urllib.request
 base="http://127.0.0.1:8088/api/mcp/"
-allowed=json.loads(sys.argv[1])
-forbidden=set(json.loads(sys.argv[2]))
+allowed=${JSON.stringify(allowed)}
+forbidden=set(${JSON.stringify(forbidden)})
 def call(method,path,data=None):
     body=None if data is None else json.dumps(data).encode()
     req=urllib.request.Request(base+path,data=body,headers={"Content-Type":"application/json"},method=method)
@@ -33,11 +33,24 @@ if forbidden.intersection(names):
 print(json.dumps({"allowed":names,"forbiddenVisible":[]}))
 `;
 
+function dockerPython(script){
+  const ssh=process.env.AGENTTEAMS_DOCKER_SSH?.trim();
+  const opts={input:script,encoding:'utf8',stdio:['pipe','pipe','pipe']};
+  const execArgs=['exec','-i',container,'python','-'];
+  if(!ssh)return execFileSync('docker',execArgs,opts);
+  const sshArgs=['-o','StrictHostKeyChecking=accept-new'];
+  if(process.env.SSHPASS){
+    sshArgs.push('-o','PreferredAuthentications=password','-o','PubkeyAuthentication=no');
+    return execFileSync('sshpass',['-e','ssh',...sshArgs,ssh,'docker',...execArgs],opts);
+  }
+  return execFileSync('ssh',['-o','BatchMode=yes',...sshArgs,ssh,'docker',...execArgs],opts);
+}
+
 function main(){
   let last='';
   for(let attempt=0;attempt<60;attempt++){
     try{
-      const output=execFileSync('docker',['exec',container,'python','-c',python,JSON.stringify(allowed),JSON.stringify(forbidden)],{encoding:'utf8',stdio:['ignore','pipe','pipe']}).trim();
+      const output=dockerPython(python).trim();
       const result=JSON.parse(output);
       process.stdout.write(`[PASS] Leader TeamHarness hard allowlist=${result.allowed.join(',')} forbidden=not-discoverable\n`);
       return;

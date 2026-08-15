@@ -1,5 +1,6 @@
 <script setup>
 import { onMounted, onUnmounted, ref } from 'vue';
+import { Setting } from '@element-plus/icons-vue';
 import WizardView from './wizard/WizardView.vue';
 import RunsView from './runs/RunsView.vue';
 import { auth, saveAuth } from './shared/auth';
@@ -32,12 +33,12 @@ onUnmounted(() => window.removeEventListener(NAVIGATE_EVENT, onNavigate));
 </script>
 <template>
   <el-container class="console">
-    <el-aside width="220px" class="side">
+    <el-aside width="180px" class="side">
       <div class="brand">
         <span class="brand-mark">A</span>
         <div>
-          <strong>Agent Console</strong>
-          <small>Chatflows</small>
+          <strong>VibeSales</strong>
+          <small>销售运营智能体搭建</small>
         </div>
       </div>
       <el-menu :key="page" :default-active="page" @select="navigate">
@@ -45,7 +46,11 @@ onUnmounted(() => window.removeEventListener(NAVIGATE_EVENT, onNavigate));
         <el-menu-item index="runs"><span>编排看板</span></el-menu-item>
       </el-menu>
       <div class="side-footer">
-        <el-button text @click="credentials = true">连接凭证</el-button>
+        <el-tooltip content="配置" placement="right">
+          <el-button text circle aria-label="配置" @click="credentials = true">
+            <el-icon :size="18"><Setting /></el-icon>
+          </el-button>
+        </el-tooltip>
       </div>
     </el-aside>
     <el-main class="main">
@@ -74,6 +79,9 @@ onUnmounted(() => window.removeEventListener(NAVIGATE_EVENT, onNavigate));
       </el-form-item>
       <el-form-item label="Runtime Bearer">
         <el-input v-model="auth.runtimeToken" type="password" show-password />
+      </el-form-item>
+      <el-form-item label="Runtime Admin Bearer">
+        <el-input v-model="auth.runtimeAdminToken" type="password" show-password />
       </el-form-item>
       <el-form-item label="X-Role">
         <el-select v-model="auth.role">

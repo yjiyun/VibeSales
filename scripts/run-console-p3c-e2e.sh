@@ -22,6 +22,26 @@ root_dir="$(cd "$(dirname "$0")/.." && pwd)"
 t0="$(date +%s)"
 elapsed() { echo "[P3C-E2E] $* (+$(( $(date +%s) - t0 ))s)"; }
 
+pick_wizard_token() {
+  local want="$1"
+  if [[ -n "${WEB_AUTH_CREDENTIALS:-}" ]]; then
+    WANT="$want" node -e '
+      const list = JSON.parse(process.env.WEB_AUTH_CREDENTIALS || "[]");
+      const hit = list.find((item) => item && item.client_code === process.env.WANT && item.token);
+      if (!hit) process.exit(2);
+      process.stdout.write(String(hit.token));
+    ' && return 0
+    echo "WEB_AUTH_CREDENTIALS has no token for $want" >&2
+    exit 1
+  fi
+  if [[ -n "${WEB_AUTH_TOKEN:-}" && "${WEB_AUTH_CLIENT_CODE:-}" == "$want" ]]; then
+    printf '%s' "$WEB_AUTH_TOKEN"
+    return 0
+  fi
+  echo "no wizard token for $want: set WEB_AUTH_CREDENTIALS or match WEB_AUTH_CLIENT_CODE" >&2
+  exit 1
+}
+
 wait_http_url() {
   local url="$1" expect="$2" name="$3" method="${4:-GET}"
   local i status=""
@@ -34,7 +54,22 @@ wait_http_url() {
   return 1
 }
 
-export CONSOLE_P3C_SHOTS="${CONSOLE_P3C_SHOTS:-$root_dir/agent-core/tmp/wizard-p3c-e2e}"
+fixture="${CONSOLE_P3C_FIXTURE:-$root_dir/agent-core/fixtures/wizard-e2e/p3c-guyu-wecom.yaml}"
+export CONSOLE_P3C_FIXTURE="$fixture"
+if [[ -z "${CONSOLE_P3C_CLIENT_CODE:-}" ]]; then
+  case "$fixture" in
+    *jifei*) CONSOLE_P3C_CLIENT_CODE=acme_agri ;;
+    *) CONSOLE_P3C_CLIENT_CODE=acme_beauty ;;
+  esac
+fi
+export CONSOLE_P3C_CLIENT_CODE
+if [[ -z "${CONSOLE_P3C_SHOTS:-}" ]]; then
+  case "$fixture" in
+    *jifei*) CONSOLE_P3C_SHOTS="$root_dir/agent-core/tmp/wizard-p3c-jifei-e2e" ;;
+    *) CONSOLE_P3C_SHOTS="$root_dir/agent-core/tmp/wizard-p3c-e2e" ;;
+  esac
+fi
+export CONSOLE_P3C_SHOTS
 export CONSOLE_UI_SHOTS="$CONSOLE_P3C_SHOTS"
 mkdir -p "$CONSOLE_P3C_SHOTS"
 
@@ -51,9 +86,11 @@ if [[ "${CONSOLE_P3C_ATTACH:-}" == "1" ]]; then
   nest_port="${WEB_PORT:-3100}"
   runtime_port="${RUNTIME_PORT:-8088}"
   console_port="${CONSOLE_PORT:-5173}"
-  export CONSOLE_UI_WIZARD_TOKEN="${WEB_AUTH_TOKEN:?WEB_AUTH_TOKEN missing in env.local}"
+  export CONSOLE_UI_WIZARD_TOKEN="$(pick_wizard_token "$CONSOLE_P3C_CLIENT_CODE")"
   export CONSOLE_UI_PIPELINE_TOKEN="${PIPELINE_CONTROL_TOKEN:?PIPELINE_CONTROL_TOKEN missing in env.local}"
   export CONSOLE_UI_RUNTIME_TOKEN="${RUNTIME_AUTH_TOKEN:?RUNTIME_AUTH_TOKEN missing in env.local}"
+  export CONSOLE_UI_RUNTIME_ADMIN_TOKEN="${RUNTIME_ADMIN_TOKEN:-}"
+  export CONSOLE_P3C_STORE_FILE="${ARTIFACT_STORE_FILE:-}"
   export CONSOLE_UI_ACTOR="${CONSOLE_UI_ACTOR:-@developer:local}"
   export CONSOLE_UI_BASE="${CONSOLE_UI_BASE:-http://127.0.0.1:$console_port}"
   export CONSOLE_UI_NEST_BASE="${CONSOLE_UI_NEST_BASE:-http://127.0.0.1:$nest_port}"
@@ -67,7 +104,7 @@ if [[ "${CONSOLE_P3C_ATTACH:-}" == "1" ]]; then
     elapsed "attach stack-only; nothing to start"
     exit 0
   fi
-  elapsed "drive browser through p3c-guyu-wecom fixture (attached)"
+  elapsed "drive browser through $(basename "$CONSOLE_P3C_FIXTURE") (attached, tenant=$CONSOLE_P3C_CLIENT_CODE)"
   cd "$root_dir/agent-console"
   npm run test:p3c-e2e
   elapsed "PASS evidence under $CONSOLE_P3C_SHOTS"
@@ -89,6 +126,9 @@ runtime_admin_token="p3c-e2e-runtime-admin-0123456789"
 approval_secret="p3c-e2e-approval-secret-at-least-32-characters"
 
 temp_dir="$(mktemp -d -t chatflows-console-p3c.XXXXXX)"
+export ARTIFACT_STORE_FILE="$temp_dir/agentteams-store.json"
+export CONSOLE_P3C_STORE_FILE="$temp_dir/agentteams-store.json"
+export CONSOLE_UI_RUNTIME_ADMIN_TOKEN="$runtime_admin_token"
 nest_pid=""; runtime_pid=""; console_pid=""
 
 stop_tree() {
@@ -143,12 +183,13 @@ elapsed "start Nest + runtime + console in parallel"
   cd "$root_dir/agent-core"
   ARTIFACT_STORE=file ARTIFACT_STORE_FILE="$temp_dir/agentteams-store.json" \
     FLOW_PLATFORM_MODE=local FLOW_PROJECT_ROOT="$temp_dir/flow-projects" ORCHESTRATION_MODE=local \
+    ARTIFACT_INSPECTOR=on \
     AGENT_RUNTIME_URL="http://127.0.0.1:$runtime_port" \
     AGENT_RUNTIME_TOKEN="$CONSOLE_UI_RUNTIME_TOKEN" \
     AGENT_RUNTIME_ADMIN_TOKEN="$runtime_admin_token" \
     LOG_STDERR=off LOG_FILE=off DEMO_TRACE=0 \
     WEB_HOST=127.0.0.1 WEB_PORT="$nest_port" WEB_STATIC_ROOT="$temp_dir/static" \
-    WEB_AUTH_TOKEN="$CONSOLE_UI_WIZARD_TOKEN" WEB_AUTH_CLIENT_CODE=acme_beauty \
+    WEB_AUTH_TOKEN="$CONSOLE_UI_WIZARD_TOKEN" WEB_AUTH_CLIENT_CODE="$CONSOLE_P3C_CLIENT_CODE" \
     PIPELINE_CONTROL_TOKEN="$CONSOLE_UI_PIPELINE_TOKEN" \
     PIPELINE_APPROVAL_SIGNING_SECRET="$approval_secret" \
     BLUEPRINT_ADMIN_TOKEN="p3c-e2e-blueprint-token-0123456789" \
@@ -160,7 +201,7 @@ nest_pid=$!
 (
   cd "$root_dir/agent-runtime"
   RUNTIME_AUTH_TOKEN="$CONSOLE_UI_RUNTIME_TOKEN" RUNTIME_ADMIN_TOKEN="$runtime_admin_token" \
-    RUNTIME_MODEL=deterministic-test RUNTIME_MODE=local \
+    RUNTIME_MODEL=deterministic-test RUNTIME_MODE=local ARTIFACT_INSPECTOR=on \
     RUNTIME_HOST=127.0.0.1 RUNTIME_PORT="$runtime_port" \
     AGENTSCOPE_STATE_HOME="$temp_dir/runtime/state" AGENTSCOPE_WORKSPACE="$temp_dir/runtime/workspace" \
     AGENTLOOP_EXPORTER=off \
@@ -171,7 +212,8 @@ runtime_pid=$!
 (
   cd "$root_dir/agent-console"
   NEST_API="http://127.0.0.1:$nest_port" RUNTIME_API="http://127.0.0.1:$runtime_port" \
-    MANAGER_API="http://127.0.0.1:28091" ORCHESTRATION_MODE=local \
+    MANAGER_API="http://127.0.0.1:28091" ORCHESTRATION_MODE=local ARTIFACT_INSPECTOR=on \
+    RUNTIME_ADMIN_TOKEN="$runtime_admin_token" \
     CONSOLE_HOST=127.0.0.1 CONSOLE_PORT="$console_port" \
     npm run dev
 ) >"$temp_dir/console.log" 2>&1 &
@@ -187,7 +229,7 @@ if [[ "${CONSOLE_P3C_STACK_ONLY:-}" == "1" ]]; then
   wait
 fi
 
-elapsed "drive browser through p3c-guyu-wecom fixture"
+elapsed "drive browser through $(basename "$CONSOLE_P3C_FIXTURE") (tenant=$CONSOLE_P3C_CLIENT_CODE)"
 cd "$root_dir/agent-console"
 npm run test:p3c-e2e
 

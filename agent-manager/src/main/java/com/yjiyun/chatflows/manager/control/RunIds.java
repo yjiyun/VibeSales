@@ -10,4 +10,12 @@ public final class RunIds {
     if (value == null || !UUID_V4.matcher(value).matches()) throw new IllegalArgumentException("run_id must be UUID v4");
     return value;
   }
+  /** Leader 口语常用前 8 位；完整 UUID 或 `` `xxxxxxxx` `` / 单词边界都算提到本 run。 */
+  public static boolean mentionedIn(String body, String runId) {
+    if (body == null || body.isBlank() || runId == null || runId.isBlank()) return false;
+    if (body.contains(runId)) return true;
+    if (runId.length() < 8) return false;
+    String prefix = runId.substring(0, 8);
+    return body.contains("`"+prefix+"`") || Pattern.compile("\\b"+Pattern.quote(prefix)+"\\b").matcher(body).find();
+  }
 }

@@ -87,6 +87,7 @@ mkdir -p "$work_dir/static" "$work_dir/flow-projects"
   cd "$root_dir/agent-core"
   ARTIFACT_STORE=file ARTIFACT_STORE_FILE="$work_dir/agentteams-store.json" \
     FLOW_PLATFORM_MODE=local FLOW_PROJECT_ROOT="$work_dir/flow-projects" ORCHESTRATION_MODE=local \
+    ARTIFACT_INSPECTOR=on \
     AGENT_RUNTIME_URL="http://127.0.0.1:$runtime_port" \
     AGENT_RUNTIME_TOKEN="$runtime_token" \
     AGENT_RUNTIME_ADMIN_TOKEN="$runtime_admin_token" \
@@ -111,7 +112,7 @@ mkdir -p "$work_dir/runtime/state" "$work_dir/runtime/workspace"
 (
   cd "$root_dir/agent-runtime"
   RUNTIME_AUTH_TOKEN="$runtime_token" RUNTIME_ADMIN_TOKEN="$runtime_admin_token" \
-    RUNTIME_MODEL="$runtime_model" RUNTIME_MODE=local \
+    RUNTIME_MODEL="$runtime_model" RUNTIME_MODE=local ARTIFACT_INSPECTOR=on \
     RUNTIME_HOST=127.0.0.1 RUNTIME_PORT="$runtime_port" RUNTIME_LOCAL_BLUEPRINT="$blueprint" \
     AGENTSCOPE_STATE_HOME="$work_dir/runtime/state" AGENTSCOPE_WORKSPACE="$work_dir/runtime/workspace" \
     AGENTLOOP_EXPORTER=off \
@@ -124,7 +125,8 @@ echo "[4/4] start agent-console dev server on http://127.0.0.1:$console_port"
 (
   cd "$root_dir/agent-console"
   NEST_API="http://127.0.0.1:$nest_port" RUNTIME_API="http://127.0.0.1:$runtime_port" \
-    MANAGER_API="http://127.0.0.1:28090" ORCHESTRATION_MODE=local \
+    MANAGER_API="http://127.0.0.1:28090" ORCHESTRATION_MODE=local ARTIFACT_INSPECTOR=on \
+    RUNTIME_ADMIN_TOKEN="$runtime_admin_token" \
     WEB_AUTH_TOKEN="$wizard_token" PIPELINE_CONTROL_TOKEN="$pipeline_token" \
     RUNTIME_AUTH_TOKEN="$runtime_token" \
     CONSOLE_HOST=127.0.0.1 CONSOLE_PORT="$console_port" \
@@ -144,9 +146,14 @@ cat <<INFO
   Wizard Bearer            $wizard_token
   Pipeline Control Bearer  $pipeline_token
   Runtime Bearer           $runtime_token
+  Runtime Admin Bearer     $runtime_admin_token
   Manager Bearer / Admin   留空（agent-manager 未起，见下）
   X-Role                   admin
   X-Actor                  @developer:local
+
+向导右侧「产物」「专家团」tab 已打开（ARTIFACT_INSPECTOR=on）。生产关掉：三件进程都设 ARTIFACT_INSPECTOR=off 后重启。
+CLI：./scripts/inspect-run.sh --store $work_dir/agentteams-store.json
+local 下「专家团」显示空态是预期（不派 Matrix）。
 
 「产物对话」不要填启动脚本的 seed。先在「搭建向导」里点「开始生成」→「确认发布」，再点「去试聊」。
 本页会自动绑定本次发布的 clientCode / runtimeAgentId。

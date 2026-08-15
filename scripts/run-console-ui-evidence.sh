@@ -87,6 +87,7 @@ mkdir -p "$temp_dir/static" "$temp_dir/flow-projects"
   cd "$root_dir/agent-core"
   ARTIFACT_STORE=file ARTIFACT_STORE_FILE="$temp_dir/agentteams-store.json" \
     FLOW_PLATFORM_MODE=local FLOW_PROJECT_ROOT="$temp_dir/flow-projects" ORCHESTRATION_MODE=local \
+    ARTIFACT_INSPECTOR=on \
     AGENT_RUNTIME_URL="http://127.0.0.1:$runtime_port" \
     AGENT_RUNTIME_TOKEN="$CONSOLE_UI_RUNTIME_TOKEN" \
     AGENT_RUNTIME_ADMIN_TOKEN="$runtime_admin_token" \
@@ -108,7 +109,7 @@ mkdir -p "$temp_dir/runtime/state" "$temp_dir/runtime/workspace"
 (
   cd "$root_dir/agent-runtime"
   RUNTIME_AUTH_TOKEN="$CONSOLE_UI_RUNTIME_TOKEN" RUNTIME_ADMIN_TOKEN="$runtime_admin_token" \
-    RUNTIME_MODEL=deterministic-test RUNTIME_MODE=local \
+    RUNTIME_MODEL=deterministic-test RUNTIME_MODE=local ARTIFACT_INSPECTOR=on \
     RUNTIME_HOST=127.0.0.1 RUNTIME_PORT="$runtime_port" RUNTIME_LOCAL_BLUEPRINT="$blueprint" \
     AGENTSCOPE_STATE_HOME="$temp_dir/runtime/state" AGENTSCOPE_WORKSPACE="$temp_dir/runtime/workspace" \
     AGENTLOOP_EXPORTER=off \
@@ -121,7 +122,7 @@ echo "[UI] start agent-console dev server on $CONSOLE_UI_BASE"
 (
   cd "$root_dir/agent-console"
   NEST_API="http://127.0.0.1:$nest_port" RUNTIME_API="http://127.0.0.1:$runtime_port" \
-    MANAGER_API="http://127.0.0.1:28090" ORCHESTRATION_MODE=local \
+    MANAGER_API="http://127.0.0.1:28090" ORCHESTRATION_MODE=local ARTIFACT_INSPECTOR=on \
     CONSOLE_HOST=127.0.0.1 CONSOLE_PORT="$console_port" \
     npm run dev
 ) >"$temp_dir/console.log" 2>&1 &

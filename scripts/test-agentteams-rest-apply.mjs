@@ -87,6 +87,11 @@ try {
   if (team.workerMembers.length !== 11 || team.workerMembers[0].name !== 'chatflows-leader' || team.workerMembers[0].role !== 'team_leader') throw new Error('Team REST mapping mismatch');
   const worker = resources.get('workers/wizard-intent');
   if (!worker.soul.includes('Bundled Skill contract: p1-wizard-gate') || worker.mcpServers[0].url !== 'https://gateway.test/mcp-servers/chatflows-p1/mcp') throw new Error('rendered Worker contract missing');
+  if (!worker.agents?.includes('简体中文') || !worker.agents.includes('跟协调者')) throw new Error('rendered Worker agents language override missing');
+  if (!worker.agents.includes('过渡说明') || !worker.agents.includes('报错分析')) throw new Error('rendered Worker agents must cover tool narration and error analysis');
+  // 契约在 AGENTS.md 之后才进系统提示，所以 SOUL.md 末尾必须带中文复述，且要排在 bundled 契约后面。
+  if (!worker.soul.includes('# 语言（复述 AGENTS.md 的默认语言规则')) throw new Error('rendered Worker soul missing trailing language restatement');
+  if (worker.soul.indexOf('# 语言（复述 AGENTS.md 的默认语言规则') < worker.soul.indexOf('Bundled Skill contract: p1-wizard-gate')) throw new Error('language restatement must follow bundled Skill contracts');
   if (!resources.has('humans/chatflows-coordinator')) throw new Error('Human resource missing');
   if (resources.get('humans/chatflows-coordinator').permissionLevel !== 2) throw new Error('Human must use L2 Team-scoped permission');
   process.stdout.write('[PASS] REST apply fails closed, syncs 15 Worker Skills idempotently, creates/updates 11 Workers → Team → Human, preserves unrelated resources\n');

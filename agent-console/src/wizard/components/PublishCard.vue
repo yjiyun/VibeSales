@@ -12,9 +12,11 @@ const props = defineProps({
   publishing: { type: Boolean, default: false },
   error: { type: String, default: '' },
   history: { type: Boolean, default: false },
+  rechecking: { type: Boolean, default: false },
+  nudging: { type: Boolean, default: false },
 });
 
-const emit = defineEmits(['publish', 'revise', 'chat']);
+const emit = defineEmits(['publish', 'revise', 'chat', 'recheck', 'nudge']);
 
 const showTech = ref(false);
 
@@ -93,7 +95,7 @@ const kinds = computed(() => (props.snapshot?.artifacts ?? []).map((item) => ite
         type="info"
         :closable="false"
         show-icon
-        title="发布后，可在右侧「沙盒试聊」验收这份智能体；需要时可以回滚。"
+        title="产物已就绪，请确认发布。发布完成后按钮会变为「去试聊」。"
       />
       <el-alert
         v-else-if="published"
@@ -108,13 +110,23 @@ const kinds = computed(() => (props.snapshot?.artifacts ?? []).map((item) => ite
         :closable="false"
         show-icon
         :title="error || '发布未完成，请返回修改需求后重新生成'"
-      />
+      >
+        <!-- failed 是终态（FAILED/ABORTED），重试没用；error 多是 Team Leader
+             卡在某个阶段（比如 MCP 连接类抖动，几秒后自愈），值得提醒它重试。 -->
+        <template v-if="error && !failed" #default>
+          <div style="margin-top: 8px">
+            <el-button size="small" :loading="nudging" :disabled="nudging" @click="emit('nudge')">
+              {{ nudging ? '重试中…' : '重试' }}
+            </el-button>
+          </div>
+        </template>
+      </el-alert>
       <el-alert
         v-else
         type="warning"
         :closable="false"
         show-icon
-        title="仍在生成，确认发布会在自检通过后可点。"
+        title="仍在生成，确认发布会在自检通过后可点。平台编排跑真模型通常 15–25 分钟；等久了点「检查发布闸门」复查即可，不用重新生成。"
       />
 
       <div v-if="!history" class="wz-actions" style="margin-top: 12px">
@@ -125,10 +137,19 @@ const kinds = computed(() => (props.snapshot?.artifacts ?? []).map((item) => ite
           :disabled="!ready || publishing"
           @click="emit('publish')"
         >
-          确认发布
+          {{ publishing ? '发布中，请稍候…' : '确认发布' }}
         </el-button>
         <el-button v-if="published" type="primary" @click="emit('chat')">去试聊</el-button>
-        <el-button v-if="!published" @click="emit('revise')">返回修改需求</el-button>
+        <!-- FAILED/ABORTED 是终态，再复查也不会变，按钮留着只会让人干等 -->
+        <el-button
+          v-if="!published && !ready && !failed"
+          :loading="rechecking"
+          :disabled="rechecking || publishing"
+          @click="emit('recheck')"
+        >
+          检查发布闸门
+        </el-button>
+        <el-button v-if="!published" :disabled="publishing" @click="emit('revise')">返回修改需求</el-button>
         <el-button text bg @click="showTech = !showTech">
           {{ showTech ? '收起' : '查看' }}技术详情
         </el-button>

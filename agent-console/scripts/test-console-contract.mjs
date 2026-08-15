@@ -74,13 +74,16 @@ try {
   if (wizardRequests.some(item => /client_code/.test(item.body))) throw new Error('Wizard UI submitted untrusted client_code');
 
   await managerApi.create({ client_code: 'acme', spec: 'phase1' });
+  await managerApi.room('run-contract');
   await pipelineApi.start({ client_code: 'acme' });
   const managerSse = []; await managerEvents('run-contract', (event, data) => managerSse.push([event, data]));
   const runtimeSse = []; await runtimeChat({ clientCode: 'acme', userId: 'u1', sessionId: 's1', runtimeAgentId: 'a1' }, 'hello', (event, data) => runtimeSse.push([event, data]));
   const managerRequest = requests.find(item => item.label === 'manager' && item.method === 'POST');
+  const roomRequest = requests.find(item => item.label === 'manager' && item.path === '/api/v1/orchestrations/run-contract/room');
   const pipelineRequest = requests.find(item => item.label === 'nest' && item.path === '/api/v1/pipeline/start');
   const runtimeRequest = requests.find(item => item.label === 'runtime');
   if (managerRequest?.headers.authorization !== 'Bearer manager-contract-token' || pipelineRequest?.headers.authorization !== 'Bearer pipeline-contract-token' || runtimeRequest?.headers.authorization !== 'Bearer runtime-contract-token') throw new Error('backend-specific bearer token routing failed');
+  if (!roomRequest || roomRequest.method !== 'GET' || roomRequest.headers.authorization !== 'Bearer manager-contract-token') throw new Error('manager room route mismatch: ' + JSON.stringify(roomRequest));
   if (managerSse.at(-1)?.[0] !== 'done' || runtimeSse.at(-1)?.[0] !== 'done') throw new Error('manager/runtime SSE did not reach done');
 
   const phase1 = { gate: 'PASS', client_code: 'acme', triage: { channel: 'wecom', industry: 'beauty', needs_long_term_memory: true, needs_skill_evolution: false }, summary: { industry: { id: 'beauty' }, business_goals: [{ id: 'faq_deflect' }], business_brief: 'brief' } };
@@ -106,6 +109,16 @@ try {
     ],
   });
   if (snap.approvalId !== 'a1' || snap.runtimeAgentId !== 'beauty_wecom_cs-acme_beauty' || !snap.memory) throw new Error('pipeline snapshot mapping mismatch');
+  if (snap.artifacts.find(item => item.kind === 'blueprint')?.payload?.runtimeAgentId !== 'beauty_wecom_cs-acme_beauty') throw new Error('pipeline snapshot dropped artifact payload');
+  const { extractApprovalId, applyApprovalGate, mentionsRun } = await import('../src/shared/run-snapshot.js?gate=' + Date.now());
+  const run = '1b4f918e-5aa7-4147-a1db-7cb98e8ede30';
+  if (!mentionsRun('`1b4f918e` (acme_agri) — 等待 Human 审批', run) || mentionsRun('other run', run)) throw new Error('run mention prefix matching failed');
+  const approvalId = extractApprovalId([
+    { body: '1. `1b4f918e` (acme_agri) — ⏸️ 等待 Human 审批 (approval_id=699838ba-409e-4802-8aea-7b0ceaabbafa)' },
+  ], run);
+  if (approvalId !== '699838ba-409e-4802-8aea-7b0ceaabbafa') throw new Error('informal approval_id was not extracted: ' + approvalId);
+  const gated = applyApprovalGate({ runId: run, status: 'DISPATCHED', approvalId: '' }, approvalId);
+  if (gated.status !== 'WAITING_HUMAN' || gated.approvalId !== approvalId) throw new Error('approval gate was not applied to wizard snapshot');
 
   const events = [];
   await consumeSse(new Response('event: message\r\ndata: {"delta":"ok"}\r\n\r\nevent: done\r\ndata: {}\r\n\r\n'), (event, data) => events.push([event, data]));

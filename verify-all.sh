@@ -147,6 +147,7 @@ manager_test ManifestApplySelfTest
 manager_test MatrixPasswordLoginSelfTest
 manager_test AgentLoopContractSelfTest
 manager_test matrix.RestMatrixClientSelfTest
+manager_test matrix.RoomTimelineSelfTest
 manager_test agent.OrchestrationStoreSelfTest
 manager_test agent.OrchestrationPlannerSuspendSelfTest
 manager_test agent.OrchestrationPlannerFallbackSelfTest
@@ -160,6 +161,7 @@ cd "$root_dir/agent-runtime"
 ./build-dist.sh
 mvn -o -q test-compile
 runtime_test RuntimeSelfTest
+runtime_test InspectSelfTest
 runtime_test RuntimeGatewaySelfTest
 runtime_test RuntimeGatewayModelSelfTest
 runtime_test RuntimeAgentLoopSelfTest
@@ -179,10 +181,12 @@ assert_sse "$sse_output"
 stop_runtime
 echo "[PASS] real HTTP P3C dry-run and SSE message/done stream"
 
-echo "[VERIFY] Agent Console production build"
+echo "[VERIFY] VibeSales Harness production build"
 cd "$root_dir/agent-console"
 npm run test:contract
 npm run build
+echo "[VERIFY] artifact inspect-run CLI"
+node "$root_dir/scripts/inspect-run.mjs" --self-test
 
 # 浏览器级 UI 验收（§8.1 #17/#18 的运行证据）。默认 auto：装了 Playwright 浏览器就跑，
 # 没装就跳过并说明原因 —— 门禁不该因为一台机器没下过 chromium 就红。

@@ -286,7 +286,7 @@ try {
   await shot(page, 'wizard-sandbox-disabled');
 
   // 凭证抽屉：五个 Bearer 必须是 password 输入，截图不泄露明文
-  await page.getByRole('button', { name: '连接凭证' }).click();
+  await page.getByRole('button', { name: '配置' }).click();
   await page.getByText('本机开发连接凭证').waitFor();
   // 抽屉从右侧滑入 0.3s。文本一挂上 DOM 就可断言了，但那一刻抽屉还在视口外，
   // 直接截图会拍到「没有抽屉的聊天页」。等它位置稳定再拍。

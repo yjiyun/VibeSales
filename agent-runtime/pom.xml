@@ -29,6 +29,18 @@
       <artifactId>jedis</artifactId>
       <version>3.6.0</version>
     </dependency>
+    <!-- AgentLoop OTLP 直发（最终方案 §7）：SDK + OTLP/HTTP exporter。
+         OtelTracingMiddleware 用 GlobalOpenTelemetry.getTracer，故只需启动时注册全局 SDK。 -->
+    <dependency>
+      <groupId>io.opentelemetry</groupId>
+      <artifactId>opentelemetry-sdk</artifactId>
+      <version>1.30.0</version>
+    </dependency>
+    <dependency>
+      <groupId>io.opentelemetry</groupId>
+      <artifactId>opentelemetry-exporter-otlp</artifactId>
+      <version>1.30.0</version>
+    </dependency>
   </dependencies>
   <build>
     <plugins>

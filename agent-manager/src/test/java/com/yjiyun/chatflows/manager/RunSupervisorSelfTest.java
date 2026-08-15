@@ -13,6 +13,10 @@ public final class RunSupervisorSelfTest {
   if(RunSupervisor.terminal("run_id: other\nstatus: SUCCEEDED",run)!=null||RunSupervisor.terminal("notes\nrun_id: "+run+"\nstatus: SUCCEEDED",run)!=null)throw new AssertionError("non-frontmatter terminal accepted");
   boolean uuidRejected=false;try{supervisor.run("room","run-not-uuid","acme","",false,1000,0);}catch(IllegalArgumentException error){uuidRejected=true;}if(!uuidRejected)throw new AssertionError("non-v4 run_id accepted");
   List<RunSupervisor.ArtifactPointer> pointers=RunSupervisor.artifacts("---\nrun_id: "+run+"\nstatus: SUCCEEDED\n---\nartifact: evidence@1\n- blueprint@2\nignore inline flow_yaml@9\n");if(pointers.size()!=2||!"evidence".equals(pointers.get(0).kind())||pointers.get(1).version()!=2)throw new AssertionError("artifact pointers not strict: "+pointers);
+  String informal="{\"chunk\":[{\"type\":\"m.room.message\",\"sender\":\"@chatflows-leader:local\",\"content\":{\"msgtype\":\"m.text\",\"body\":\"1. `"+run.substring(0,8)+"` (acme_agri) — ⏸️ 等待 Human 审批 (approval_id=699838ba-409e-4802-8aea-7b0ceaabbafa)\"}}]}";
+  if(!RunSupervisor.requests(informal,run,Set.of("@chatflows-leader:local")).contains("699838ba-409e-4802-8aea-7b0ceaabbafa"))throw new AssertionError("informal Human-approval report was not collected");
+  String wrapped="{\"chunk\":[{\"type\":\"m.room.message\",\"sender\":\"@chatflows-leader:local\",\"content\":{\"msgtype\":\"m.text\",\"body\":\"note\\nAPPROVAL_REQUIRED run_id="+run+" approval_id=wrap-1\\n\"}}]}";
+  if(!RunSupervisor.requests(wrapped,run,Set.of("@chatflows-leader:local")).contains("wrap-1"))throw new AssertionError("wrapped APPROVAL_REQUIRED line was not collected");
   tasks.writeSpec(run,"---\nrun_id: "+run+"\n---\nmissing trace");boolean traceRejected=false;try{agent.resultReceived(run,"acme");}catch(java.io.IOException error){traceRejected=true;}if(!traceRejected)throw new AssertionError("resume without traceparent accepted");
   System.out.println("[PASS] supervisor enforces UUID v4, roles, strict terminal frontmatter, strict artifact pointers and trace restore");
  }

@@ -9,7 +9,8 @@
     "preview": "vite preview",
     "test:contract": "node scripts/test-console-contract.mjs",
     "test:ui": "node scripts/test-console-ui.mjs",
-    "test:p3c-e2e": "node scripts/test-console-p3c-e2e.mjs"
+    "test:p3c-e2e": "node scripts/test-console-p3c-e2e.mjs",
+    "test:jifei-manual": "node scripts/test-console-jifei-manual.mjs"
   },
   "dependencies": {
     "element-plus": "2.14.3",

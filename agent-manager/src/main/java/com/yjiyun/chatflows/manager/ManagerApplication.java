@@ -4,6 +4,7 @@ import com.fasterxml.jackson.databind.*; import com.fasterxml.jackson.dataformat
 /** Explicit production composition root; no local-file fallback and no default credentials. */
 public final class ManagerApplication {
  public static void main(String[] args)throws Exception{
+  com.yjiyun.chatflows.manager.observability.ManagerTelemetry.install(System.getenv()); // OTLP 引导（otlp+on 时注册全局 SDK，并置 otlpMode 停用 ROA 镜像）
   boolean serve=args.length>0&&"serve".equals(args[0]);ManagerConfig c=ManagerConfig.from(System.getenv(),serve);ManagerComposition composition=new ManagerComposition(c);if(serve){composition.checkHttp();ManagerServer server=new ManagerServer(composition);Runtime.getRuntime().addShutdownHook(new Thread(()->{server.close();composition.close();}));server.start();System.err.println("agent-manager listening on "+c.managerHost()+":"+server.port()+" planner="+composition.planner().mode());return;}composition.check();var tasks=composition.tasks();var matrix=composition.matrix();OrchestratorAgent manager=composition.orchestrator();String leaderId=ManagerComposition.onlyLeader(c.leaderIds());
   if(args.length==0||"check".equals(args[0])){System.out.println("[READY] AgentTeams controller/Matrix configured and MinIO bucket exists");return;}
   if("apply-manifest".equals(args[0])&&args.length==2){applyManifest(composition.platform(),Path.of(args[1]));return;}

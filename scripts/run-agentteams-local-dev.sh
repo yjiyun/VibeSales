@@ -10,6 +10,7 @@ fi
 set -a
 source "$env_file"
 set +a
+export ARTIFACT_INSPECTOR="${ARTIFACT_INSPECTOR:-on}"
 # 本机默认 /usr/libexec/java_home 常是 Java 8；runtime 字节码是 61，必须用 17+。
 # 不设的话 runtime 立刻崩，all 模式 trap 会把刚起来的 Nest 一并 SIGTERM，Console 点「开始」就是 Failed to fetch。
 if ! "${JAVA_HOME:-/nonexistent}/bin/java" -version >/dev/null 2>&1 \
@@ -119,7 +120,20 @@ run_nest() {
   cd "$root_dir/agent-core"
   exec npm run web
 }
-run_manager() { preflight_manager; [[ "${AGENTTEAMS_PREFLIGHT_ONLY:-0}" == 1 ]] && return; cd "$root_dir/agent-manager"; exec ./run.sh serve; }
+# platform 编排要求 Leader/Worker 工具面锁定：Leader 只有 health/message/filesync（禁止
+# create_task_room/taskflow），阶段 Worker 只有 health/filesync 且 MCP policy deny + 仅放行
+# 无 Manager 的 Team Room。qwenpaw/容器一重载就打回默认（ask、taskflow 复现），run 会静默
+# 停在 DISPATCHED。混合栈启动路径原先不跑这两个脚本，这里在起 Manager 前补上，失败即退出，
+# 避免拉起一个注定空等 WAITING_HUMAN 的栈。仅 platform 生效；AGENTTEAMS_SKIP_TOOLFACE=1 可跳过。
+configure_toolface() {
+  [[ "${ORCHESTRATION_MODE:-local}" == platform ]] || return 0
+  [[ "${AGENTTEAMS_SKIP_TOOLFACE:-0}" == 1 ]] && { echo "[toolface] skipped via AGENTTEAMS_SKIP_TOOLFACE=1" >&2; return 0; }
+  [[ "${AGENTTEAMS_PREFLIGHT_ONLY:-0}" == 1 ]] && return 0
+  echo "[toolface] locking Leader/Worker tools on remote AgentTeams (platform mode)" >&2
+  node "$root_dir/scripts/configure-agentteams-leader-tools.js"
+  node "$root_dir/scripts/configure-agentteams-worker-mcp.js"
+}
+run_manager() { preflight_manager; [[ "${AGENTTEAMS_PREFLIGHT_ONLY:-0}" == 1 ]] && return; configure_toolface; cd "$root_dir/agent-manager"; exec ./run.sh serve; }
 run_runtime() { preflight_runtime; [[ "${AGENTTEAMS_PREFLIGHT_ONLY:-0}" == 1 ]] && return; cd "$root_dir/agent-runtime"; exec ./run.sh; }
 run_console() { [[ "${AGENTTEAMS_PREFLIGHT_ONLY:-0}" == 1 ]] && return; cd "$root_dir/agent-console"; exec npm run dev; }
 # ManagerApplication.checkHttp() 启动时探测一次 Nest /api/v1/pipeline/health，不重试；

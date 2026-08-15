@@ -310,14 +310,28 @@ async function main() {
 
   const redis = new URL(required('REDIS_URL'));
   const net = require('net');
+  const resp = args => `*${args.length}\r\n${args.map(arg => `$${Buffer.byteLength(arg)}\r\n${arg}\r\n`).join('')}`;
   await new Promise((resolve, reject) => {
     const socket = net.createConnection({ host: redis.hostname, port: Number(redis.port || 6379) });
     const timer = setTimeout(() => { socket.destroy(); reject(new Error('Redis timeout')); }, 5_000);
-    socket.once('connect', () => socket.write('*1\r\n$4\r\nPING\r\n'));
-    socket.once('data', data => {
+    // requirepass 部署下裸 PING 会先收到 -NOAUTH；有密码时先 AUTH 再 PING。
+    const password = decodeURIComponent(redis.password || '');
+    const username = decodeURIComponent(redis.username || '');
+    let authenticated = !password;
+    socket.once('connect', () => {
+      socket.write(password ? resp(username ? ['AUTH', username, password] : ['AUTH', password]) : resp(['PING']));
+    });
+    socket.on('data', data => {
+      const text = String(data);
+      if (!authenticated) {
+        if (!text.startsWith('+OK')) { clearTimeout(timer); socket.destroy(); reject(new Error('Redis AUTH failed')); return; }
+        authenticated = true;
+        socket.write(resp(['PING']));
+        return;
+      }
       clearTimeout(timer);
       socket.destroy();
-      if (!String(data).startsWith('+PONG')) reject(new Error('Redis PING failed'));
+      if (!text.startsWith('+PONG')) reject(new Error('Redis PING failed'));
       else resolve();
     });
     socket.once('error', reject);

@@ -19,6 +19,16 @@ if (leaders.length !== 1) fail('exactly one team_leader required');
 for (const {file,doc} of workers) {
   if (doc.spec.runtime !== 'qwenpaw') fail(file + ': runtime must be qwenpaw');
   if (!doc.spec.identity || !doc.spec.soul || !Array.isArray(doc.spec.skills)) fail(file + ': identity/soul/skills required');
+  if (!doc.spec.agents) fail(file + ': spec.agents required for default Chinese Room language');
+  if (!doc.spec.agents.includes('简体中文')) fail(file + ': spec.agents must require Simplified Chinese');
+  if (!doc.spec.agents.includes('跟协调者')) fail(file + ': spec.agents must override coordinator language rule');
+  // 上一轮只写六类枚举（致谢/追问/阻塞/进度/汇报/派活），模型把工具旁白与英文报错分析当成枚举外，落回英文。
+  // 语言规则必须是全覆盖式，并显式收住「工具返回英文报错」这个实测破功点。
+  if (!doc.spec.agents.includes('过渡说明')) fail(file + ': spec.agents must cover inter-tool narration, not just report categories');
+  if (!doc.spec.agents.includes('报错分析')) fail(file + ': spec.agents must cover error analysis in Chinese');
+  if (!doc.spec.agents.includes('工具返回值')) fail(file + ': spec.agents must hold the rule when tool output is English');
+  if (!doc.spec.agents.includes('原始 error')) fail(file + ': spec.agents must exempt raw error strings from translation');
+  if (!doc.spec.soul.includes('Room 口语默认简体中文')) fail(file + ': soul must remind default Chinese Room language');
   for (const fragment of ['filesync','pull','shared/tasks/task-{当前run_id}/','spec.md','run_id','RUN_BLOCKED','禁止']) if (!doc.spec.soul.includes(fragment)) fail(file + ': explicit current-run FileSync protocol missing ' + fragment);
   for (const m of doc.spec.mcpServers ?? []) if (!/^https:\/\/[^/]*higress[^/]*\/mcp-servers\//.test(m.url)) fail(file + ': MCP must use Higress');
 }
@@ -116,7 +126,11 @@ for (const name of httpShared) if (httpMethod(managerHttp,name) !== httpMethod(r
 if (!managerHttp.includes('RunIds.requireV4') || runtimeHttp.includes('RunIds')) fail('A23 run_id validation belongs to the manager control plane only');
 if(!consoleAuth.includes('managerAdminToken')||!consoleAuth.includes("auth.role==='admin'")||consoleApi.includes('headers(auth.managerToken)'))fail('Console must select the separate manager admin credential for admin role');
 if(!managerConfig.includes('must not receive DASHSCOPE_API_KEY')||!managerConfig.includes('getOrDefault("ORCHESTRATOR_LLM","off")'))fail('A21/A24 manager must reject true key and default deterministic');
-if (!fs.existsSync(path.join(root,'scripts/render-agentteams-resource.js'))) fail('Worker Skill contracts must be bundled into rendered souls for self-contained deployment');
+const renderScript=path.join(root,'scripts/render-agentteams-resource.js');
+if (!fs.existsSync(renderScript)) fail('Worker Skill contracts must be bundled into rendered souls for self-contained deployment');
+// 语言规则在 AGENTS.md 里排系统提示最前，后面跟着英文 Skill 契约 / TEAMS.md / env context。
+// 渲染必须在 bundled 契约之后补一段中文复述，占住 SOUL.md 末尾的近位，否则规则被英文后文淹没。
+if (!fs.readFileSync(renderScript,'utf8').includes('LANGUAGE_TAIL')) fail('render must restate the Chinese language rule after bundled Skill contracts');
 if (!fs.existsSync(path.join(root,'scripts/sync-agentteams-worker-skills.js'))) fail('REST apply must synchronize declared Worker Skill files into AgentTeams MinIO');
 for (const helper of ['put-qwenpaw-mcp-credential.py','provision-agentteams-worker-mcp-credential.sh']) {
   if (!fs.existsSync(path.join(root, 'scripts', helper))) fail('missing secure Worker MCP credential helper: ' + helper);
