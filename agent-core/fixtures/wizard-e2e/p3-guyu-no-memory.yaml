@@ -1,0 +1,46 @@
+# 对照用例：同一行业/目标，无长期记忆信号 → 应走 P3（不是默认 P3C）
+# 只跑 API / 单测，不进浏览器。
+id: p3-guyu-no-memory
+title: 美妆企微客服无记忆信号（P3）
+client_code: acme_beauty
+orchestration_mode: local
+llm: false
+browser: false
+
+steps:
+  - stage: welcome
+    action: start
+    llm: false
+  - stage: S1_INDUSTRY
+    action: pick
+    label: 美妆
+    expect:
+      industry: beauty
+  - stage: S2_GOALS
+    action: multi_pick
+    labels:
+      - 回答客户常见问题，减少流失和重复咨询
+      - 介绍产品/服务，并推荐合适方案
+      - 收集问题信息，并转交给人工处理
+    submit: true
+  - stage: S3_BRIEF
+    action: type_brief
+    # 故意不含：跨会话 / 记住 / 偏好 / 画像 / 任务板 / 挂起 / 好的继续
+    text: >-
+      我们是美妆品牌，要在企业微信做私聊客服：自动回答护肤咨询、按肤质推荐产品、复杂或投诉转人工。
+  - stage: S4_CTA
+    action: pick
+    label: 先看看效果
+    expect:
+      gate: PASS
+      scene_id: beauty_wecom_cs
+      needs_long_term_memory: false
+  - stage: result
+    action: start_build
+    expect:
+      path: P3
+      status: WAITING_HUMAN
+
+expect:
+  build_path: P3
+  needs_long_term_memory: false

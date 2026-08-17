@@ -1,0 +1,104 @@
+# 主用例：美妆企微客服 → P3C（跨会话记忆触发）
+# 对齐 docs/agentteams/e2e-spec.md 与专家团附录 A；浏览器必跑。
+# 人读脚本：docs/agentteams/测试用例/test1-guyu-p3c.md
+# 怎么跑：docs/agentteams/测试用例/test1-guyu-p3c.md
+#   隔离栈：./scripts/run-console-p3c-e2e.sh（只强制 7.1）
+#   真模型：CONSOLE_P3C_ATTACH=1 ./scripts/run-console-p3c-e2e.sh（7.2–7.6 智能体；租户必须 acme_beauty）
+id: p3c-guyu-wecom
+title: 谷雨级美妆企微客服（P3C）
+client_code: acme_beauty
+orchestration_mode: local
+llm: false
+user_dialog: VIBE_SALES_BASE/docs/agentteams/测试用例/test1-guyu-p3c.md
+
+steps:
+  - stage: welcome
+    action: start
+    llm: false
+    expect:
+      default_model: deepseek-v4-flash-0731
+      models:
+        - deepseek-v4-flash-0731
+        - qwen3.8-max
+        - qwen3.7-plus
+        - deepseek-v4-pro
+  - stage: S1_INDUSTRY
+    action: pick
+    label: 美妆
+    expect:
+      industry: beauty
+  - stage: S2_GOALS
+    action: multi_pick
+    labels:
+      - 回答客户常见问题，减少流失和重复咨询
+      - 介绍产品/服务，并推荐合适方案
+      - 收集问题信息，并转交给人工处理
+    submit: true
+  - stage: S3_BRIEF
+    action: type_brief
+    # 触发词必须保留：跨会话 / 记住 / 偏好 / 挂起 / 好的继续
+    text: >-
+      我们是美妆品牌，要在企业微信做私聊客服：自动回答护肤咨询、按肤质推荐产品、复杂或投诉转人工。客户下次再来要跨会话记住肤质和偏好，挂起的推荐任务说「好的继续」能接着聊。
+  - stage: S4_CTA
+    action: pick
+    label: 先看看效果
+    expect:
+      gate: PASS
+      scene_id: beauty_wecom_cs
+      needs_long_term_memory: true
+  - stage: result
+    action: start_generate
+    expect:
+      path: P3C
+      status: WAITING_HUMAN
+  - stage: publish
+    action: confirm_publish
+    expect:
+      status: SUCCEEDED
+      artifact_kinds:
+        - wizard_state
+        - triage
+        - match_result
+        - guidance
+        - expert_dispatch
+        - expert_result
+        - blueprint
+        - blueprint_check
+        - approval
+        - import_result
+        - dry_run
+  - stage: chat
+    action: send_all
+    expect:
+      done: true
+      nonempty: true
+    messages:
+      - id: sse_probe
+        text: SSE health check
+        expect:
+          probe: true
+      - id: reco_slot
+        text: 帮我推荐一套提亮的，预算三百左右，混合皮
+        expect:
+          probe: false
+      - id: allergy_intake
+        text: 用完脸红刺痛
+        expect:
+          probe: false
+      - id: priority_conflict
+        text: 又刺痛又想退货
+        expect:
+          probe: false
+      - id: escalate
+        text: 转人工
+        expect:
+          probe: false
+      - id: task_recover
+        text: 好的继续刚才那个推荐
+        expect:
+          probe: false
+  - stage: persist
+    action: reenter_sandbox
+    expect:
+      sandbox_ready: true
+      timeline_kept: true

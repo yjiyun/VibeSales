@@ -1,0 +1,15 @@
+{
+  "scene_id": "beauty_wecom_cs",
+  "agent_family": "customer_success",
+  "channel": "wecom",
+  "industry": "beauty",
+  "confidence": 0.85,
+  "reason": "美妆客服骨架有了，但未说能力诉求",
+  "known_slots": {
+    "industry": "beauty",
+    "role": "customer_success"
+  },
+  "missing_slots": ["desired_capabilities"],
+  "ask_user": "",
+  "risk_flags": []
+}

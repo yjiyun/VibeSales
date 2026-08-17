@@ -1,0 +1,16 @@
+{
+  "scene_id": "hr_recruit_wecom_faq",
+  "agent_family": "hr_recruit",
+  "channel": "wecom",
+  "industry": "edu",
+  "confidence": 0.95,
+  "reason": "教育培训招聘智能接待：FAQ 分流+转 HR",
+  "known_slots": {
+    "industry": "edu",
+    "role": "hr_recruit",
+    "desired_capabilities": ["intent_detect", "faq_route", "human_escalate"]
+  },
+  "missing_slots": [],
+  "ask_user": "",
+  "risk_flags": []
+}

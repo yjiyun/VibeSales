@@ -1,0 +1,15 @@
+{
+  "scene_id": "beauty_wecom_cs",
+  "agent_family": "",
+  "channel": "wecom",
+  "industry": "beauty",
+  "confidence": 0.8,
+  "reason": "只提到美妆，未说明角色",
+  "known_slots": {
+    "industry": "beauty",
+    "desired_capabilities": ["faq_retrieve"]
+  },
+  "missing_slots": ["role"],
+  "ask_user": "",
+  "risk_flags": []
+}

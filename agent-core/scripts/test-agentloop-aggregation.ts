@@ -1,0 +1,21 @@
+import fs from 'node:fs';
+import { toAgentLoopEnvelope } from '../src/common/agentloop-sink';
+
+const managerFile=process.env.MANAGER_AGENTLOOP_ENVELOPE,runtimeFile=process.env.RUNTIME_AGENTLOOP_ENVELOPE;
+if(!managerFile||!runtimeFile)throw new Error('MANAGER_AGENTLOOP_ENVELOPE and RUNTIME_AGENTLOOP_ENVELOPE required');
+const trace=(requestId:string,data:Record<string,unknown>)=>({kind:'step',ts:Date.now(),seq:1,flow:'P1',requestId,scope:'QwenService.chatJson',event:'usage',data,deltaMs:1,totalMs:1,level:'info'} as any);
+const canary='agentloop-node-secret-canary';
+const nodeRun=toAgentLoopEnvelope(trace('request-run',{run_id:'run-1',session_id:'session-1',client_code:'acme',agent:'node-qwen',model:'qwen-plus',prompt_tokens:11,completion_tokens:7,HIGRESS_CONSUMER_TOKEN:canary}));
+const preRun=toAgentLoopEnvelope(trace('request-wizard',{session_id:'session-pre',client_code:'acme',agent:'node-qwen',model:'qwen-plus',prompt_tokens:100,completion_tokens:50}));
+const manager=JSON.parse(fs.readFileSync(managerFile,'utf8')),runtime=JSON.parse(fs.readFileSync(runtimeFile,'utf8'));
+const all=[nodeRun,preRun,manager,runtime],runEvents=all.filter(item=>item.attributes['agentteams.run_id']==='run-1');
+if(runEvents.length!==3)throw new Error('run aggregation must contain exactly controllable layers 1/3/4');
+if(preRun.attributes['agentteams.usage.scope']!=='pre_run'||'agentteams.run_id' in preRun.attributes)throw new Error('pre-run Wizard usage leaked into a run');
+if(runEvents.some(item=>item.attributes['agentteams.usage.scope']!=='run'||item.attributes['agentteams.worker_usage_available']!==false))throw new Error('run usage omitted stock Worker availability disclosure');
+const sum=(key:string)=>runEvents.reduce((total,item)=>total+Number(item.attributes[key]??0),0);
+if(sum('gen_ai.usage.input_tokens')!==19||sum('gen_ai.usage.output_tokens')!==13)throw new Error('three-layer token aggregation mismatch');
+const agents=new Set(runEvents.map(item=>item.attributes['agentteams.agent']));
+if(!['node-qwen','agent-runtime','orchestrator'].every(agent=>agents.has(agent)))throw new Error('controllable layer identity missing');
+if(manager.attributes['agentteams.orchestration.planner']!=='llm')throw new Error('manager LLM planner dimension missing');
+if(JSON.stringify(all).includes(canary)||'HIGRESS_CONSUMER_TOKEN' in nodeRun.attributes)throw new Error('Node AgentLoop envelope leaked model credentials');
+process.stdout.write('[PASS] AgentLoop aggregates real Node/manager/runtime envelopes by one run_id, excludes pre-run usage and discloses unavailable Worker usage\n');

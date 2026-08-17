@@ -1,0 +1,106 @@
+# 主用例：农业无人机企微售后 → P3C（LLM + RAG，跨会话记忆触发）
+# 对齐 docs/agentteams/测试用例/test2-jifei-rag.md；浏览器必跑。
+# 怎么跑：docs/agentteams/测试用例/test2-jifei-rag.md
+#   隔离栈：CONSOLE_P3C_FIXTURE=agent-core/fixtures/wizard-e2e/p3c-jifei-agri.yaml ./scripts/run-console-p3c-e2e.sh（只强制 7.1）
+#   真模型：CONSOLE_P3C_FIXTURE=... CONSOLE_P3C_ATTACH=1 ./scripts/run-console-p3c-e2e.sh（7.2–7.6 智能体）
+# 租户：WEB_AUTH_CLIENT_CODE=acme_agri（隔离栈见到本夹具会自动切；混合栈读 env.local）
+id: p3c-jifei-agri
+title: 极飞级农业无人机企微售后（P3C · LLM+RAG）
+client_code: acme_agri
+orchestration_mode: local
+llm: false
+user_dialog: VIBE_SALES_BASE/docs/agentteams/测试用例/test2-jifei-rag.md
+
+steps:
+  - stage: welcome
+    action: start
+    llm: false
+    expect:
+      default_model: deepseek-v4-flash-0731
+      models:
+        - deepseek-v4-flash-0731
+        - qwen3.8-max
+        - qwen3.7-plus
+        - deepseek-v4-pro
+  - stage: S1_INDUSTRY
+    action: pick
+    label: 农业 / 农机
+    expect:
+      industry: agriculture
+  - stage: S2_GOALS
+    action: multi_pick
+    labels:
+      - 回答客户常见问题，减少流失和重复咨询
+      - 指导客户正确使用产品或服务
+      - 收集问题信息，并转交给人工处理
+    submit: true
+  - stage: S3_BRIEF
+    action: type_brief
+    # 触发词必须保留：跨会话 / 记住 / 挂起 / 好的继续（P3C 记忆信号）
+    # RAG 诉求：知识库 / 检索 / 召回 / 禁止编造
+    # 故意不含：越用越准 / 自己积累话术（那是 skill evolution，会把场景从简单 RAG 拉偏）
+    text: >-
+      我们是农业无人机品牌：大飞，要在企业微信做售后客服：故障、操作、质保、飞行法规必须先检索知识库再回答，召回差就说查不到并转人工，禁止编造步骤。复杂或投诉转人工。客户下次再来要跨会话记住机型和已排查过的故障，挂起的排障说「好的继续」能接着从知识库往下查。
+  - stage: S4_CTA
+    action: pick
+    label: 先看看效果
+    expect:
+      gate: PASS
+      scene_id: agri_drone_wecom_cs
+      needs_long_term_memory: true
+  - stage: result
+    action: start_generate
+    expect:
+      path: P3C
+      status: WAITING_HUMAN
+  - stage: publish
+    action: confirm_publish
+    expect:
+      status: SUCCEEDED
+      artifact_kinds:
+        - wizard_state
+        - triage
+        - match_result
+        - guidance
+        - expert_dispatch
+        - expert_result
+        - blueprint
+        - blueprint_check
+        - approval
+        - import_result
+        - dry_run
+  - stage: chat
+    action: send_all
+    expect:
+      done: true
+      nonempty: true
+    messages:
+      - id: sse_probe
+        text: SSE health check
+        expect:
+          probe: true
+      - id: kb_operation
+        text: P200 喷幅怎么调
+        expect:
+          probe: false
+      - id: kb_troubleshoot
+        text: P200 启动不了，报 E2
+        expect:
+          probe: false
+      - id: kb_warranty
+        text: 还在质保吗
+        expect:
+          probe: false
+      - id: escalate
+        text: 转人工
+        expect:
+          probe: false
+      - id: task_recover
+        text: 好的继续刚才那个排障
+        expect:
+          probe: false
+  - stage: persist
+    action: reenter_sandbox
+    expect:
+      sandbox_ready: true
+      timeline_kept: true

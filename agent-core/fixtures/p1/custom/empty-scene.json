@@ -1,0 +1,13 @@
+{
+  "scene_id": "",
+  "channel": "wecom",
+  "industry": "beauty",
+  "confidence": 0.5,
+  "reason": "空 scene",
+  "known_slots": {
+    "industry": "beauty"
+  },
+  "missing_slots": [],
+  "ask_user": "",
+  "risk_flags": []
+}

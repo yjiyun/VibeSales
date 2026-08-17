@@ -1,0 +1,15 @@
+{
+  "scene_id": "hr_recruit_wecom_faq",
+  "agent_family": "hr_recruit",
+  "channel": "wecom",
+  "industry": "edu",
+  "confidence": 0.95,
+  "reason": "用户要搭建招聘工作流/智能接待",
+  "known_slots": {
+    "role": "招聘接待",
+    "desired_capabilities": ["intent_detect", "faq_route"]
+  },
+  "missing_slots": [],
+  "ask_user": "",
+  "risk_flags": []
+}

@@ -1,0 +1,15 @@
+{
+  "scene_id": "hr_recruit_wecom_faq",
+  "agent_family": "hr_recruit",
+  "channel": "wecom",
+  "industry": "edu",
+  "confidence": 0.9,
+  "reason": "招聘接待骨架齐，能力选填未填也应 PASS",
+  "known_slots": {
+    "industry": "edu",
+    "role": "hr_recruit"
+  },
+  "missing_slots": [],
+  "ask_user": "",
+  "risk_flags": []
+}

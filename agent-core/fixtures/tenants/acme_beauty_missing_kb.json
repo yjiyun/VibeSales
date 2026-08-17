@@ -1,0 +1,12 @@
+{
+  "client_code": "acme_beauty_missing_kb",
+  "channels": ["wecom"],
+  "connectors": [
+    "scrm_session",
+    "task_board",
+    "intent_queue",
+    "shared_profile",
+    "reco_rule_context",
+    "human_notify"
+  ]
+}

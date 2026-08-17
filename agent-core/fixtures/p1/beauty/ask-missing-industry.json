@@ -1,0 +1,15 @@
+{
+  "scene_id": "beauty_wecom_cs",
+  "agent_family": "customer_success",
+  "channel": "wecom",
+  "industry": "",
+  "confidence": 0.8,
+  "reason": "提到客服角色，未说明行业",
+  "known_slots": {
+    "role": "customer_success",
+    "desired_capabilities": ["faq_retrieve", "product_recommend"]
+  },
+  "missing_slots": ["industry"],
+  "ask_user": "",
+  "risk_flags": []
+}

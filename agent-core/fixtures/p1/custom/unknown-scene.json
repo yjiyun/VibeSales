@@ -1,0 +1,16 @@
+{
+  "scene_id": "drone_dispatch_ops",
+  "agent_family": "operations",
+  "channel": "wecom",
+  "industry": "general",
+  "confidence": 0.9,
+  "reason": "词表中不存在的场景",
+  "known_slots": {
+    "industry": "general",
+    "role": "operations",
+    "desired_capabilities": ["intent_detect"]
+  },
+  "missing_slots": [],
+  "ask_user": "",
+  "risk_flags": ["out_of_catalog"]
+}

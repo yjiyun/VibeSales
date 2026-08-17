@@ -1,0 +1,10 @@
+{
+  "client_code": "acme_agri",
+  "channels": ["wecom"],
+  "connectors": [
+    "scrm_session",
+    "knowledge_base",
+    "human_notify",
+    "shared_profile"
+  ]
+}

@@ -1,0 +1,8 @@
+{
+  "industry": "beauty",
+  "role": "customer_success",
+  "desired_capabilities": ["faq_retrieve", "product_recommend"],
+  "channel": "wecom",
+  "confidence": 0.9,
+  "reason": "slots→美妆顾问"
+}

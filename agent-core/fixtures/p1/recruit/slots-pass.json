@@ -1,0 +1,8 @@
+{
+  "industry": "edu",
+  "role": "hr_recruit",
+  "desired_capabilities": ["faq_route"],
+  "channel": "wecom",
+  "confidence": 0.9,
+  "reason": "slots→招聘助手"
+}

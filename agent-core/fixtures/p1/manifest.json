@@ -1,0 +1,107 @@
+{
+  "phase": "P1",
+  "description": "美妆顾问 + 招聘助手粗补闸门回归",
+  "cases": [
+    {
+      "id": "beauty/pass-full",
+      "client_code": "acme_beauty",
+      "mode": "triage",
+      "file": "beauty/pass-full.json",
+      "expect_gate": "PASS",
+      "expect_scene": "beauty_wecom_cs"
+    },
+    {
+      "id": "beauty/ask-missing-role",
+      "client_code": "acme_beauty",
+      "mode": "triage",
+      "file": "beauty/ask-missing-role.json",
+      "expect_gate": "ASK",
+      "expect_next_slot": "role"
+    },
+    {
+      "id": "beauty/ask-missing-industry",
+      "client_code": "acme_beauty",
+      "mode": "triage",
+      "file": "beauty/ask-missing-industry.json",
+      "expect_gate": "ASK",
+      "expect_next_slot": "industry"
+    },
+    {
+      "id": "beauty/ask-missing-capabilities",
+      "client_code": "acme_beauty",
+      "mode": "triage",
+      "file": "beauty/ask-missing-capabilities.json",
+      "expect_gate": "ASK",
+      "expect_next_slot": "desired_capabilities"
+    },
+    {
+      "id": "beauty/ask-low-confidence",
+      "client_code": "acme_beauty",
+      "mode": "triage",
+      "file": "beauty/ask-low-confidence.json",
+      "expect_gate": "ASK"
+    },
+    {
+      "id": "beauty/slots-pass",
+      "client_code": "acme_beauty",
+      "mode": "slots",
+      "file": "beauty/slots-pass.json",
+      "expect_gate": "PASS",
+      "expect_scene": "beauty_wecom_cs"
+    },
+    {
+      "id": "beauty/slots-ask-no-caps",
+      "client_code": "acme_beauty",
+      "mode": "slots",
+      "file": "beauty/slots-ask-no-caps.json",
+      "expect_gate": "ASK",
+      "expect_next_slot": "desired_capabilities"
+    },
+    {
+      "id": "recruit/pass-full",
+      "client_code": "acme_edu",
+      "mode": "triage",
+      "file": "recruit/pass-full.json",
+      "expect_gate": "PASS",
+      "expect_scene": "hr_recruit_wecom_faq"
+    },
+    {
+      "id": "recruit/pass-without-capabilities",
+      "client_code": "acme_edu",
+      "mode": "triage",
+      "file": "recruit/pass-without-capabilities.json",
+      "expect_gate": "PASS",
+      "expect_scene": "hr_recruit_wecom_faq"
+    },
+    {
+      "id": "recruit/ask-missing-role",
+      "client_code": "acme_edu",
+      "mode": "triage",
+      "file": "recruit/ask-missing-role.json",
+      "expect_gate": "ASK",
+      "expect_next_slot": "role"
+    },
+    {
+      "id": "recruit/slots-pass",
+      "client_code": "acme_edu",
+      "mode": "slots",
+      "file": "recruit/slots-pass.json",
+      "expect_gate": "PASS",
+      "expect_scene": "hr_recruit_wecom_faq"
+    },
+    {
+      "id": "custom/unknown-scene",
+      "client_code": "acme_beauty",
+      "mode": "triage",
+      "file": "custom/unknown-scene.json",
+      "expect_gate": "CUSTOM"
+    },
+    {
+      "id": "custom/empty-scene",
+      "client_code": "acme_beauty",
+      "mode": "triage",
+      "file": "custom/empty-scene.json",
+      "expect_gate": "CUSTOM"
+    }
+  ]
+}

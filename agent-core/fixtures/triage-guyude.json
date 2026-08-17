@@ -1,0 +1,15 @@
+{
+  "scene_id": "beauty_wecom_cs",
+  "agent_family": "customer_success",
+  "channel": "wecom",
+  "industry": "beauty",
+  "confidence": 0.95,
+  "reason": "用户要搭建美妆销售/客服专家（答疑+推品）",
+  "known_slots": {
+    "role": "销售专家",
+    "desired_capabilities": ["faq_retrieve", "product_recommend"]
+  },
+  "missing_slots": [],
+  "ask_user": "",
+  "risk_flags": []
+}

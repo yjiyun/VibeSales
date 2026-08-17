@@ -1,0 +1,41 @@
+# 对齐 docs/agentteams/测试用例/test2-jifei-rag-manual.md
+# 关 LLM 接待员，走到并点下「开始生成」，不等确认发布 / 试聊。
+# 怎么跑：./scripts/run-console-jifei-manual.sh
+id: jifei-manual
+title: 极飞向导手工路径（无接待员 LLM，点下开始生成即停）
+client_code: acme_agri
+llm: false
+stop_at: start_generate
+user_dialog: VIBE_SALES_BASE/docs/agentteams/测试用例/test2-jifei-rag-manual.md
+
+steps:
+  - stage: welcome
+    action: start
+    llm: false
+    expect:
+      default_model: deepseek-v4-flash-0731
+  - stage: S1_INDUSTRY
+    action: pick
+    label: 农业 / 农机
+  - stage: S2_GOALS
+    action: multi_pick
+    labels:
+      - 回答客户常见问题，减少流失和重复咨询
+      - 指导客户正确使用产品或服务
+      - 收集问题信息，并转交给人工处理
+    submit: true
+  - stage: S3_BRIEF
+    action: type_brief
+    text: >-
+      我们是农业无人机品牌：大飞，要在企业微信做售后客服：故障、操作、质保、飞行法规必须先检索知识库再回答，召回差就说查不到并转人工，禁止编造步骤。复杂或投诉转人工。客户下次再来要跨会话记住机型和已排查过的故障，挂起的排障说「好的继续」能接着从知识库往下查。
+  - stage: S4_CTA
+    action: pick
+    label: 先看看效果
+    expect:
+      gate: PASS
+      scene_id: agri_drone_wecom_cs
+      needs_long_term_memory: true
+  - stage: result
+    action: start_generate
+    expect:
+      button: /开始生成（(local|platform)）/

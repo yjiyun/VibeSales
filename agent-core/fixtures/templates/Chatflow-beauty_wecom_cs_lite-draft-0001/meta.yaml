@@ -1,0 +1,38 @@
+# 验证用包（fixtures/templates/README.md）：只为把同 scene 候选数顶到 2。
+# 刻意不写 coze_export——选中了也开通不了，避免被当成可交付资产。
+template_id: beauty_wecom_cs_lite
+display_name: 美妆企微轻量接待（知识答复·验证用）
+stability: draft
+scene_ids: [beauty_wecom_cs]
+agent_family: customer_success
+industries: [beauty]
+channels: [wecom]
+triggers: [inbound_msg]
+capabilities:
+  - intent_detect
+  - faq_retrieve
+  - human_escalate
+# 取真包 connectors_required 的子集，保证同一租户下两个包都能过第三道闸
+connectors_required:
+  - scrm_session
+  - knowledge_base
+connectors_optional: []
+params:
+  - key: robot_key
+    label: 机器人/租户标识
+    required: true
+    example: "企微·轻量接待（robotKey=demo_wecom_lite）"
+  - key: knowledge_packs
+    label: 知识库内容
+    required: true
+    example: "用法/退换货 两类，各 3–5 条"
+  - key: escalate_owner
+    label: 转人工对接
+    required: true
+    example: "企微客服群 @值班"
+# 不含英文能力 id，使其关键词分低于真包，稳定落在「落选」区
+search_text: |
+  轻量版企微接待：意图识别后走知识库答复，答不上来直接转人工。
+  只做答疑与转接，不含推品、过敏收集、退换挽留、任务恢复。
+mutable: [copywriting, switches, params, knowledge_content]
+immutable: [core_topology]

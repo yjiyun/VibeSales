@@ -1,0 +1,14 @@
+{
+  "scene_id": "hr_recruit_wecom_faq",
+  "agent_family": "",
+  "channel": "wecom",
+  "industry": "edu",
+  "confidence": 0.8,
+  "reason": "提到教育，未说明是招聘还是客服",
+  "known_slots": {
+    "industry": "edu"
+  },
+  "missing_slots": ["role"],
+  "ask_user": "",
+  "risk_flags": []
+}

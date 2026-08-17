@@ -1,0 +1,16 @@
+{
+  "scene_id": "beauty_wecom_cs",
+  "agent_family": "customer_success",
+  "channel": "wecom",
+  "industry": "beauty",
+  "confidence": 0.4,
+  "reason": "模型犹豫，置信偏低",
+  "known_slots": {
+    "industry": "beauty",
+    "role": "customer_success",
+    "desired_capabilities": ["faq_retrieve", "product_recommend"]
+  },
+  "missing_slots": [],
+  "ask_user": "",
+  "risk_flags": ["low_confidence"]
+}

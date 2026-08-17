@@ -1,0 +1,13 @@
+{
+  "client_code": "acme_beauty",
+  "channels": ["wecom"],
+  "connectors": [
+    "scrm_session",
+    "task_board",
+    "intent_queue",
+    "shared_profile",
+    "knowledge_base",
+    "reco_rule_context",
+    "human_notify"
+  ]
+}

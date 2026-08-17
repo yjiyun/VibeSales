@@ -1,0 +1,5 @@
+{
+  "client_code": "acme_edu",
+  "channels": ["wecom"],
+  "connectors": []
+}
