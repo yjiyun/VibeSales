@@ -818,7 +818,7 @@ export class WizardSessionService {
       ]);
     }
     return this.enterMatch(session, [
-      this.msg(session, 'notice', WizardSpeech.previewHandoff()),
+      this.msg(session, 'speech', WizardSpeech.previewHandoff()),
     ]);
   }
 
@@ -881,7 +881,7 @@ export class WizardSessionService {
       // §8.7：CTA 即生成。已在 DONE 无需重新 finish，直接跑 P2 并推卡
       this.trace.step(SCOPE, 'revise.preview_cta', { stage: session.stage });
       return this.enterMatch(session, [
-        this.msg(session, 'notice', WizardSpeech.previewHandoff()),
+        this.msg(session, 'speech', WizardSpeech.previewHandoff()),
       ]);
     }
 
@@ -1088,18 +1088,17 @@ export class WizardSessionService {
   // ==========================================================================
 
   private industryQuestion(): WizardQuestion {
-    const groups = this.catalogs.industriesGrouped();
+    const options = this.catalogs.wizardIndustryOptions();
     return {
       stage: 'S1_INDUSTRY',
       key: 'industry',
-      title: '你所在的行业是什么？',
-      hint: '先选一个最接近的，我会据此判断 Agent 更适合解决哪些问题。都不匹配可以直接描述。',
+      title:
+        '你所在的行业是什么？先选一个最接近的行业，我会据此判断 Agent 更适合解决哪些问题。',
+      hint: '如果这些选项都不太匹配，也可以直接发消息告诉我你们具体是做什么的。',
       input: 'single',
       options_from: 'industries',
-      options: this.catalogs.optionsFor('industries'),
-      groups,
+      options,
       allow_free: true,
-      quick_replies: [{ label: '都不匹配，我直接描述', value: FREE_INDUSTRY }],
     };
   }
 
@@ -1113,7 +1112,6 @@ export class WizardSessionService {
       options_from: 'business_goals',
       options: this.catalogs.optionsFor('business_goals'),
       skippable: true,
-      quick_replies: [{ label: '暂时跳过', value: '跳过' }],
     };
   }
 
@@ -1249,9 +1247,13 @@ export class WizardSessionService {
 
   /** 描述示例取自行业下场景的 typical_prompts（没有行业就全局取前几条）。 */
   private briefExamples(session: Session): string[] {
-    const scenes = this.catalogs.get().scenes;
+    const scenes = this.catalogs
+      .get()
+      .scenes.filter((s) => s.id !== 'unmapped');
     const pool = session.industryId
-      ? scenes.filter((s) => (s.industries ?? []).includes(session.industryId!))
+      ? scenes.filter((s) =>
+          this.catalogs.sceneCoversIndustry(s, session.industryId!),
+        )
       : scenes;
     return (pool.length > 0 ? pool : scenes)
       .flatMap((s) => s.typical_prompts ?? [])

@@ -132,7 +132,12 @@ export class ArtifactStoreService implements OnModuleDestroy {
 
   async listArtifacts(runId:string,kind?:ArtifactKind):Promise<Artifact[]>{
     if(!this.pool)return structuredClone(this.data.artifacts.filter(a=>a.run_id===runId&&(!kind||a.kind===kind)).sort((a,b)=>a.created_at.localeCompare(b.created_at)));
-    const run=await this.getRun(runId),params:unknown[]=[runId];let sql='select * from artifact where run_id=$1';if(kind){sql+=' and kind=$2';params.push(kind);}sql+=' order by created_at,version';const result=await this.tenantQuery<Artifact>(run.client_code,sql,params);return Promise.all(result.rows.map(async value=>{const row=this.artifactRow(value);return isBlobRef(row.payload)?{...row,payload:await this.blobs!.get(row.payload)}:row;}));
+    const run=await this.getRun(runId),params:unknown[]=[runId];let sql='select * from artifact where run_id=$1';if(kind){sql+=' and kind=$2';params.push(kind);}sql+=' order by created_at,version';const result=await this.tenantQuery<Artifact>(run.client_code,sql,params);return Promise.all(result.rows.map(async value=>{
+      const row=this.artifactRow(value);
+      if(!isBlobRef(row.payload))return row;
+      try{return{...row,payload:await this.blobs!.get(row.payload)};}
+      catch{return row;}
+    }));
   }
 
   async getRun(runId: string): Promise<RunRecord> {

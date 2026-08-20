@@ -246,6 +246,7 @@ try {
   await industryCard.getByText('你所在的行业是什么？').waitFor();
   await industryCard.locator('.wz-opt', { hasText: s1.label }).first().click();
   await shot(page, 'wizard-s1-industry', industryCard);
+  await industryCard.getByRole('button', { name: '确认' }).click();
   mark('s1-industry');
 
   const s2 = step('S2_GOALS');
@@ -260,7 +261,7 @@ try {
     `业务目标应勾中 ${s2.labels.length} 项`,
   );
   await shot(page, 'wizard-s2-goals', goalsCard);
-  await goalsCard.getByRole('button', { name: '提交' }).click();
+  await goalsCard.getByRole('button', { name: '确认' }).click();
   mark('s2-goals');
 
   const s3 = step('S3_BRIEF');
@@ -298,17 +299,20 @@ try {
   );
   mark('gate-pass');
 
-  const matches = page.locator('.wz-timeline-item.is-match');
-  await matches.first().waitFor({ timeout: 60_000 });
-  await shot(page, 'wizard-p2-match', matches.first());
+  const embed = result.locator('.wz-match-embed');
+  await embed.getByText(/这版会怎么工作/).waitFor({ timeout: 60_000 });
+  await shot(page, 'wizard-p2-match', result);
   mark('p2-match');
 
   const build = step('result');
-  const buildButton = result.getByRole('button', { name: /开始生成（(local|platform)）/ });
+  const buildButton = result.getByRole('button', { name: /开始构建（(local|platform)）/ });
   await buildButton.waitFor();
   const buttonLabel = (await buildButton.innerText()).trim();
   const isPlatform = /platform/.test(buttonLabel);
   await buildButton.click();
+  const buildCard = page.locator('.wz-build').last();
+  await buildCard.getByText(/构建智能体|已生成/).waitFor({ timeout: 30_000 });
+  await buildCard.locator('.wz-build__wait').first().waitFor();
   const publish = page.locator('.wz-publish').last();
   await publish.getByText('WAITING_HUMAN').waitFor({ timeout: isPlatform ? 1_800_000 : 120_000 });
   await publish.getByText('P3C').waitFor();
@@ -380,6 +384,7 @@ try {
   ]);
   assert.equal(approveOutcome, 'ok');
   await publish.getByText('已发布').first().waitFor({ timeout: 30_000 });
+  await publish.locator('.wz-match-embed').getByText(/这版会怎么工作/).waitFor();
   await shot(page, 'wizard-published-p3c', publish);
   mark('published');
 
@@ -394,7 +399,7 @@ try {
   approvalId = [...afterApprove.artifacts].reverse().find((a) => a.kind === 'approval')?.payload?.approval_id ?? '';
 
   await toastsGone(page);
-  await publish.getByRole('button', { name: '去试聊' }).click();
+  await publish.getByRole('button', { name: '沙盒试聊' }).click();
   }
 
   const sandboxTab = page.locator('.wz-runtime-tabs').getByRole('tab', { name: '沙盒试聊' });
@@ -433,8 +438,8 @@ try {
   await page.locator('.wz-runtime-tabs').getByRole('tab', { name: '信息收集' }).click();
   await page.locator('.wz-runtime-tabs').getByRole('tab', { name: '沙盒试聊' }).click();
   assert.equal(await sandboxTab.getAttribute('aria-selected'), 'true', '已发布后应能再次进入沙盒');
-  await page.locator('.wz-publish').last().getByRole('button', { name: '去试聊' }).click();
-  assert.equal(await sandboxTab.getAttribute('aria-selected'), 'true', '再次点击去试聊应打开沙盒');
+  await page.locator('.wz-publish').last().getByRole('button', { name: '沙盒试聊' }).click();
+  assert.equal(await sandboxTab.getAttribute('aria-selected'), 'true', '再次点击沙盒试聊应打开沙盒');
   await shot(page, 'wizard-reenter-sandbox');
   mark('reenter-sandbox');
 

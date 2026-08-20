@@ -37,12 +37,16 @@ mvn -o -q test-compile
 for test in ManagerSelfTest ManagerConfigSelfTest ManagerAuthSelfTest ManagerHttpSelfTest RunSupervisorSelfTest CompletionGateSelfTest MatrixPasswordLoginSelfTest AgentLoopContractSelfTest ManifestApplySelfTest; do
   mvn -o -q exec:java -Dexec.mainClass="com.yjiyun.chatflows.manager.$test" -Dexec.classpathScope=test
 done
+mvn -o -q exec:java -Dexec.mainClass=com.yjiyun.chatflows.manager.platform.RestPlatformClientApplySelfTest -Dexec.classpathScope=test
 mvn -o -q exec:java -Dexec.mainClass=com.yjiyun.chatflows.manager.matrix.RestMatrixClientSelfTest -Dexec.classpathScope=test
+mvn -o -q exec:java -Dexec.mainClass=com.yjiyun.chatflows.manager.matrix.RestMatrixClientJoinInviteSelfTest -Dexec.classpathScope=test
 mvn -o -q exec:java -Dexec.mainClass=com.yjiyun.chatflows.manager.matrix.RoomTimelineSelfTest -Dexec.classpathScope=test
 mvn -o -q exec:java -Dexec.mainClass=com.yjiyun.chatflows.manager.agent.OrchestrationStoreSelfTest -Dexec.classpathScope=test
 mvn -o -q exec:java -Dexec.mainClass=com.yjiyun.chatflows.manager.agent.OrchestrationPlannerSuspendSelfTest -Dexec.classpathScope=test
 mvn -o -q exec:java -Dexec.mainClass=com.yjiyun.chatflows.manager.agent.OrchestrationPlannerFallbackSelfTest -Dexec.classpathScope=test
 mvn -o -q exec:java -Dexec.mainClass=com.yjiyun.chatflows.manager.observability.AgentLoopExporterSelfTest -Dexec.classpathScope=test -Dexec.args="$manager_agentloop_file"
+mvn -o -q exec:java -Dexec.mainClass=com.yjiyun.chatflows.manager.observability.ManagerTelemetryMessagesSelfTest -Dexec.classpathScope=test
+mvn -o -q exec:java -Dexec.mainClass=com.yjiyun.chatflows.manager.observability.ManagerSpanAliasesSelfTest -Dexec.classpathScope=test
 mvn -o -q exec:java -Dexec.mainClass=com.yjiyun.chatflows.manager.ApprovalProofExport -Dexec.classpathScope=test -Dexec.args="$proof_file $proof_secret"
 cd "$root_dir/agent-core"
 APPROVAL_PROOF_FILE="$proof_file" APPROVAL_PROOF_SECRET="$proof_secret" npm run test:approval-proof
@@ -55,20 +59,26 @@ for test in RuntimeSelfTest InspectSelfTest RuntimeGatewaySelfTest RuntimeGatewa
   mvn -o -q exec:java -Dexec.mainClass="com.yjiyun.chatflows.runtime.$test" -Dexec.classpathScope=test
 done
 mvn -o -q exec:java -Dexec.mainClass=com.yjiyun.chatflows.runtime.observability.AgentLoopExporterSelfTest -Dexec.classpathScope=test -Dexec.args="$runtime_agentloop_file"
+mvn -o -q exec:java -Dexec.mainClass=com.yjiyun.chatflows.runtime.observability.RuntimeTelemetryMessagesSelfTest -Dexec.classpathScope=test
+mvn -o -q exec:java -Dexec.mainClass=com.yjiyun.chatflows.runtime.observability.SpanAliasesSelfTest -Dexec.classpathScope=test
 mvn -o -q exec:java -Dexec.mainClass=com.yjiyun.chatflows.runtime.CrossLanguageSelfTest -Dexec.classpathScope=test -Dexec.args="$contract_temp/smokes/beauty.json"
 mvn -o -q exec:java -Dexec.mainClass=com.yjiyun.chatflows.runtime.IndustrySmokeSelfTest -Dexec.classpathScope=test -Dexec.args="$contract_temp/smokes"
 cd "$root_dir/agent-core"
 MANAGER_AGENTLOOP_ENVELOPE="$manager_agentloop_file" RUNTIME_AGENTLOOP_ENVELOPE="$runtime_agentloop_file" npm run test:agentloop-aggregation
+npm run test:agentloop-messages
+npm run test:span-aliases
+npm run test:otlp-sink
 
 cd "$root_dir"
 node scripts/test-agentteams-local-dev.mjs
 node scripts/test-agentteams-platform-e2e.mjs
 node scripts/test-higress-chatflows-mcp-config.mjs
+node scripts/test-rotate-higress-llm-key.mjs
 node scripts/test-agentteams-preflight.mjs
 node scripts/validate-agentteams.js
 node scripts/e2e-human-approver.js --self-test
-node --check scripts/preflight-agentteams-integration.js scripts/render-agentteams-bundle.js scripts/discover-local-agentteams-env.js scripts/configure-agentteams-higress.js scripts/discover-agentteams-resources.js scripts/run-agentteams-platform-e2e.js scripts/configure-agentteams-leader-tools.js scripts/configure-agentteams-worker-mcp.js
-bash -n verify-all.sh verify-contracts.sh scripts/deploy-agentteams-stack.sh scripts/run-agentteams-e2e.sh scripts/run-agentteams-stack-e2e.sh scripts/test-bff-http.sh scripts/test-agentteams-apply.sh
+node --check scripts/preflight-agentteams-integration.js scripts/render-agentteams-bundle.js scripts/discover-local-agentteams-env.js scripts/configure-agentteams-higress.js scripts/discover-agentteams-resources.js scripts/run-agentteams-platform-e2e.js scripts/configure-agentteams-leader-tools.js scripts/configure-agentteams-worker-mcp.js scripts/rotate-higress-llm-key.mjs scripts/test-rotate-higress-llm-key.mjs
+bash -n verify-all.sh verify-contracts.sh scripts/deploy-agentteams-stack.sh scripts/run-agentteams-e2e.sh scripts/run-agentteams-stack-e2e.sh scripts/test-bff-http.sh scripts/test-agentteams-apply.sh scripts/run-local-docker-stack.sh scripts/start-local-docker-stack-manual.sh
 git diff --check
 git -C agent-core diff --check
 echo "[PASS] no-port contracts: P1-P4/MCP/Human/manager/runtime/cross-language/replicas"

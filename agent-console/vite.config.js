@@ -64,6 +64,7 @@ export default defineConfig({plugins:[vue()],define:{
   // manager 审批要求 X-Actor 命中 AGENTTEAMS_HUMAN_IDS，否则 403 actor is not an
   // authorized Human。取白名单第一个作为向导默认 actor，免得用户手改 localStorage。
   'import.meta.env.VITE_HUMAN_ACTOR':humanActorDefine(),
+  'import.meta.env.VITE_LEADER_ROOM_ID':tokenDefine(['AGENTTEAMS_LEADER_ROOM_ID','VITE_LEADER_ROOM_ID']),
 },server:{
   host:process.env.CONSOLE_HOST??'127.0.0.1',
   port:Number(process.env.CONSOLE_PORT??5173),

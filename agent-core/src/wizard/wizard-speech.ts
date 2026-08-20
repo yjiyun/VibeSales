@@ -186,7 +186,7 @@ export const WizardSpeech = {
 
   /** [P2] 进入匹配前的过渡话术：CTA 即生成，不再让用户去点按钮。 */
   previewHandoff(): string {
-    return '好的，正在按你的信息匹配可用方案，稍等一下。';
+    return '好的，为你匹配方案，调动专家团构建你的专属智能体。';
   },
 
   /**

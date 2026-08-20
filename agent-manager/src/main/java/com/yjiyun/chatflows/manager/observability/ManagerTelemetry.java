@@ -8,6 +8,10 @@ import io.opentelemetry.sdk.OpenTelemetrySdk;
 import io.opentelemetry.sdk.resources.Resource;
 import io.opentelemetry.sdk.trace.SdkTracerProvider;
 import io.opentelemetry.sdk.trace.export.BatchSpanProcessor;
+import com.fasterxml.jackson.core.JsonFactory;
+import com.fasterxml.jackson.core.JsonGenerator;
+import java.io.IOException;
+import java.io.StringWriter;
 import java.util.Map;
 /**
  * OTel GenAI/agentteams attributes for the Java orchestration edge. All telemetry is best-effort.
@@ -35,11 +39,42 @@ public final class ManagerTelemetry {
   return operation.startsWith("plan")?"invoke_agent":operation;
  }
 
- public static Span start(String operation,String runId,String clientCode,String phase){try{return tracer().spanBuilder("agent-manager."+operation).setSpanKind(SpanKind.INTERNAL).setAttribute("gen_ai.operation.name",operationName(operation)).setAttribute("gen_ai.session.id",runId).setAttribute("agentteams.operation",operation).setAttribute("agentteams.run_id",runId).setAttribute("agentteams.client_code",clientCode).setAttribute("agentteams.phase",phase).setAttribute("agentteams.agent","orchestrator").startSpan();}catch(Throwable ignored){return Span.getInvalid();}}
+ /**
+  * operation → 面板「Span 名称」列的中文别名（与 Nest 侧 span-aliases.ts 同一套命名习惯：
+  * `{环节}·{中文动作}`）。span.name 是自由串，改它不影响 operation.name 枚举（面板靠后者分类/出图标）。
+  * 未收录回退 `编排·{operation}`：仍带中文前缀（面板一眼看出是编排环节），操作名保留原文不丢身份。
+  * 新增 operation 时在此补一行。
+  */
+ static String displayName(String operation){
+  switch(operation){
+   case "dispatch": return "编排·派发 P1 任务";
+   case "collect": return "编排·收取 Worker 结果";
+   case "plan": return "编排·LLM 规划";
+   case "plan.resume": return "编排·LLM 规划续跑";
+   default: return "编排·"+operation;
+  }
+ }
+
+ public static Span start(String operation,String runId,String clientCode,String phase){try{return tracer().spanBuilder(displayName(operation)).setSpanKind(SpanKind.INTERNAL).setAttribute("gen_ai.operation.name",operationName(operation)).setAttribute("gen_ai.session.id",runId).setAttribute("agentteams.operation",operation).setAttribute("agentteams.run_id",runId).setAttribute("agentteams.client_code",clientCode).setAttribute("agentteams.phase",phase).setAttribute("agentteams.agent","orchestrator").startSpan();}catch(Throwable ignored){return Span.getInvalid();}}
  public static void success(Span span){try{span.setStatus(StatusCode.OK);}catch(Throwable ignored){}}
  public static void failure(Span span,Throwable error){try{span.recordException(error);span.setStatus(StatusCode.ERROR,error.getClass().getSimpleName());}catch(Throwable ignored){}}
  public static void planner(Span span,String mode){try{span.setAttribute("agentteams.orchestration.planner",mode);}catch(Throwable ignored){}}
  public static void usage(Span span,int input,int output){try{span.setAttribute("gen_ai.usage.input_tokens",input);span.setAttribute("gen_ai.usage.output_tokens",output);}catch(Throwable ignored){}}
+
+ // 正文采集开关（方案 §5.3）：OTEL_INSTRUMENTATION_GENAI_CAPTURE_MESSAGE_CONTENT ∈ {span_and_event, span_only, true} 时写正文；
+ // false / none / 缺失时不写（含 PII 的 spec 可整体关闭，关掉后调用链与 token 仍可用）。默认开启。
+ private static final boolean CAPTURE_CONTENT=captureContent(System.getenv());
+ private static final JsonFactory JSON=new JsonFactory();
+ static boolean captureContent(Map<String,String> env){String v=env.getOrDefault("OTEL_INSTRUMENTATION_GENAI_CAPTURE_MESSAGE_CONTENT","span_and_event").trim().toLowerCase();return !(v.equals("false")||v.equals("none")||v.isEmpty());}
+
+ /** 面板 Input 摘要：写 {@code gen_ai.input.messages}（GenAI 标准 JSON，方案 §5.3）。CAPTURE 关闭时跳过。 */
+ public static void input(Span span,String role,String text){if(!CAPTURE_CONTENT||text==null)return;try{span.setAttribute("gen_ai.input.messages",messagesJson(role,text,null));}catch(Throwable ignored){}}
+ /** 面板 Output 摘要：写 {@code gen_ai.output.messages}（GenAI 标准 JSON，含 finish_reason）。CAPTURE 关闭时跳过。 */
+ public static void output(Span span,String role,String text,String finishReason){if(!CAPTURE_CONTENT||text==null)return;try{span.setAttribute("gen_ai.output.messages",messagesJson(role,text,finishReason));}catch(Throwable ignored){}}
+
+ // [{"role":<role>,"parts":[{"type":"text","content":<text>}],"finish_reason"?:<reason>}]，用 JsonGenerator 转义正文里的换行/引号。
+ private static String messagesJson(String role,String text,String finishReason)throws IOException{StringWriter w=new StringWriter();try(JsonGenerator g=JSON.createGenerator(w)){g.writeStartArray();g.writeStartObject();g.writeStringField("role",role);g.writeArrayFieldStart("parts");g.writeStartObject();g.writeStringField("type","text");g.writeStringField("content",text);g.writeEndObject();g.writeEndArray();if(finishReason!=null)g.writeStringField("finish_reason",finishReason);g.writeEndObject();g.writeEndArray();}return w.toString();}
+
  public static void end(Span span){try{span.end();}catch(Throwable ignored){}}
 
  /** OTLP 生效时为 true：OrchestratorAgent 应停用 ROA 镜像。 */

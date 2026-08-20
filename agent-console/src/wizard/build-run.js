@@ -7,9 +7,17 @@ export async function createBuildRun(phase1, mode, { managerApi, pipelineApi }) 
   if (!phase1 || phase1.gate !== 'PASS') throw new Error('只有 gate=PASS 的 Phase1Result 可以开始生成');
   if (!phase1.client_code) throw new Error('Phase1Result 缺少凭证绑定的 client_code');
   if (mode === 'platform') {
+    let roomId = '';
+    try {
+      const injected = import.meta.env?.VITE_LEADER_ROOM_ID;
+      if (typeof injected === 'string') roomId = injected.trim();
+    } catch {
+      /* Node 契约测试没有 Vite define */
+    }
     return managerApi.create({
       client_code: phase1.client_code,
       spec: JSON.stringify({ phase: 'P1', phase1_result: phase1 }, null, 2),
+      ...(roomId ? { room_id: roomId } : {}),
     });
   }
   if (mode !== 'local') throw new Error(`不支持的 ORCHESTRATION_MODE：${mode}`);

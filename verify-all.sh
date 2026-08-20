@@ -152,6 +152,7 @@ manager_test agent.OrchestrationStoreSelfTest
 manager_test agent.OrchestrationPlannerSuspendSelfTest
 manager_test agent.OrchestrationPlannerFallbackSelfTest
 manager_test observability.AgentLoopExporterSelfTest -Dexec.args="$manager_agentloop_file"
+manager_test observability.ManagerSpanAliasesSelfTest
 manager_test ApprovalProofExport -Dexec.args="$approval_proof_file $approval_proof_secret"
 cd "$root_dir/agent-core"
 APPROVAL_PROOF_FILE="$approval_proof_file" APPROVAL_PROOF_SECRET="$approval_proof_secret" npm run test:approval-proof
@@ -167,6 +168,7 @@ runtime_test RuntimeGatewayModelSelfTest
 runtime_test RuntimeAgentLoopSelfTest
 runtime_test RuntimeDistributedSelfTest
 runtime_test observability.AgentLoopExporterSelfTest -Dexec.args="$runtime_agentloop_file"
+runtime_test observability.SpanAliasesSelfTest
 runtime_test CrossLanguageSelfTest -Dexec.args="$blueprint_file"
 runtime_test IndustrySmokeSelfTest -Dexec.args="$smoke_temp"
 cd "$root_dir/agent-core"

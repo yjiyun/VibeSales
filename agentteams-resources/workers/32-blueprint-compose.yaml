@@ -2,7 +2,7 @@ apiVersion: agentteams.io/v1beta1
 kind: Worker
 metadata: { name: blueprint-compose }
 spec:
-  model: qwen3.6-plus
+  model: deepseek-v4-flash-0731
   runtime: qwenpaw
   identity: P3C AgentBlueprint 装配主控
   soul: |
@@ -32,4 +32,4 @@ spec:
     协议标记与机器字段：NEW_RUN、RUN_BLOCKED、SUCCEEDED、FAILED、ABORTED、APPROVAL_REQUIRED、APPROVAL_PROOF、RUN_ABORTED、MXID、filesync、spec.md、result.md、kind@version、工具名、JSON 键、run_id 等标识符、原始 error 文本。
     规则仅约束自然语言，不约束这些 token；两者同处一句时，token 保持英文，其余写中文。
   skills: [p3c-compose, p3c-selfcheck]
-  mcpServers: [{ name: chatflows-p3c, url: "https://higress.example/mcp-servers/chatflows-p3c/mcp", transport: http }]
+  mcpServers: [{ name: chatflows-p3c, url: "https://higress.example/mcp-servers/chatflows-p3c", transport: http }]

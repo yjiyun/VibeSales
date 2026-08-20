@@ -85,13 +85,19 @@ export class DecideService {
       via: 'rule' | 'qwen' | 'rule_fallback',
       extra: Partial<MatchResult>,
     ): MatchResult =>
-      this.hitFromTemplate(client_code, t, via, {
-        ...extra,
-        why_user:
-          extra.why_user ?? this.whyUserForHit(t, via, triage, topk.length),
-        reject_summary,
-        alternatives: this.alternativesOf(topk, t.template_id),
-      });
+      this.hitFromTemplate(
+        client_code,
+        t,
+        via,
+        {
+          ...extra,
+          why_user:
+            extra.why_user ?? this.whyUserForHit(t, via, triage, topk.length),
+          reject_summary,
+          alternatives: this.alternativesOf(topk, t.template_id),
+        },
+        triage,
+      );
 
     if (topk.length === 0) {
       const result: MatchResult = {
@@ -102,6 +108,7 @@ export class DecideService {
         reject_reasons,
         why_user: this.whyUserForCustom(reject_summary),
         reject_summary,
+        ...this.lowDagFit(),
       };
       this.trace.step('Decide', 'result', result);
       return result;
@@ -196,6 +203,7 @@ ${truncateBrief(t.brief)}`;
             '找到了相近的方案，但和你的要求还有明显差距，建议走定制。',
           reject_summary,
           alternatives: this.alternativesOf(topk),
+          ...this.lowDagFit(),
         };
         this.trace.step('Decide', 'result', result);
         return result;
@@ -296,12 +304,14 @@ ${truncateBrief(t.brief)}`;
 
   /**
    * 组装 hit 结果：解析 workflow 绝对路径，默认列出 meta 必填 params 缺口。
+   * dag_fit 只看行业对齐 + 能力覆盖，不读 workflow YAML（C6）。
    */
   private hitFromTemplate(
     client_code: string,
     t: TemplateRecord,
     via: 'rule' | 'qwen' | 'rule_fallback',
     extra: Partial<MatchResult>,
+    triage: Triage,
   ): MatchResult {
     const workflow_path = t.coze_export
       ? path.resolve(t.root_path, t.coze_export)
@@ -325,6 +335,42 @@ ${truncateBrief(t.brief)}`;
       why_user: extra.why_user,
       reject_summary: extra.reject_summary,
       alternatives: extra.alternatives,
+      ...this.dagFitForHit(triage, t),
     };
+  }
+
+  private dagFitForHit(
+    triage: Triage,
+    t: TemplateRecord,
+  ): Pick<MatchResult, 'dag_fit' | 'industry_aligned' | 'capability_coverage'> {
+    const desired = this.desiredCapabilities(triage);
+    const caps = new Set((t.capabilities ?? []).map(String));
+    const missing = desired.filter((c) => !caps.has(c));
+    const industry_aligned = (t.industries ?? []).includes(
+      String(triage.industry ?? ''),
+    );
+    const covered = desired.length > 0 && missing.length === 0;
+    return {
+      industry_aligned,
+      capability_coverage: { desired, missing },
+      dag_fit: industry_aligned && covered ? 'high' : 'low',
+    };
+  }
+
+  private lowDagFit(): Pick<
+    MatchResult,
+    'dag_fit' | 'industry_aligned' | 'capability_coverage'
+  > {
+    return {
+      dag_fit: 'low',
+      industry_aligned: false,
+      capability_coverage: { desired: [], missing: [] },
+    };
+  }
+
+  private desiredCapabilities(triage: Triage): string[] {
+    const raw = triage.known_slots?.desired_capabilities;
+    if (!Array.isArray(raw)) return [];
+    return [...new Set(raw.map(String).filter((c) => c.trim().length > 0))];
   }
 }

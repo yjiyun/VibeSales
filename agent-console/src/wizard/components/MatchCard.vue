@@ -1,9 +1,9 @@
 <script setup>
 /**
- * MatchCard —— P2 匹配结果（时间线一格）
+ * MatchCard —— P2 匹配结果正文
  *
  * 回答三个问题：**选中了什么 → 它会怎么工作 → 我还要准备什么**。
- * 设计见 `docs/P2-拆分.md` §8.3 / §8.6。
+ * 设计见 `docs/P2-拆分.md` §8.3 / §8.6：嵌在 ResultCard 灰底折叠里，不再独占时间线一格。
  *
  * 口径：
  * - 用业务语言，`template_id` 只作副标题的小字，不当标题
@@ -21,6 +21,8 @@ const props = defineProps({
   loading: { type: Boolean, default: false },
   /** 历史版本：向导二次收口后降级留痕，不再挂重跑按钮 */
   history: { type: Boolean, default: false },
+  /** 嵌在 ResultCard 折叠区：去掉外层卡片标题，避免和摘要句重复 */
+  embedded: { type: Boolean, default: false },
 });
 
 const emit = defineEmits(['rerun']);
@@ -48,9 +50,9 @@ function json(v) {
 </script>
 
 <template>
-  <div v-if="preview" class="wz-match" :class="{ 'is-history': history }">
+  <div v-if="preview" class="wz-match" :class="{ 'is-history': history && !embedded, 'is-embedded': embedded }">
     <el-card shadow="never">
-      <template #header>
+      <template v-if="!embedded" #header>
         <div class="wz-match__head">
           <strong style="font-size: 13px">{{ title }}</strong>
           <el-tag v-if="history" size="small" type="info" effect="plain">
@@ -64,6 +66,14 @@ function json(v) {
           </el-tag>
         </div>
       </template>
+      <div v-if="embedded" class="wz-match__head">
+        <el-tag size="small" :type="isHit ? 'success' : 'warning'">
+          {{ isHit ? '命中标品' : '走定制' }}
+        </el-tag>
+        <el-tag size="small" type="info" effect="plain">
+          P2 · via {{ match?.via || 'rule' }}
+        </el-tag>
+      </div>
 
       <!-- ===== hit：选中了什么 / 会怎么工作 / 还要准备什么 ===== -->
       <template v-if="isHit">
@@ -202,7 +212,7 @@ function json(v) {
         >
           重跑匹配
         </el-button>
-        <el-button size="small" text bg @click="showJson = !showJson">
+        <el-button class="wz-json-link" link type="primary" @click="showJson = !showJson">
           {{ showJson ? '收起' : '查看' }} EndToEndResult JSON
         </el-button>
       </div>

@@ -6,7 +6,10 @@
 
 ## 项目定位与总览
 
-`VibeSales` 承载 Agent Teams 平台的**资产真源 + 平台组件**，并通过环境变量 `CHATFLOWS_ROOT`（默认解析为本仓库目录，即 `agent-core/` 的上一级）为子仓 `agent-core/` 提供 `catalogs/`、`prompts/`、`flows/` 三类资产。
+`VibeSales` 承载 Agent Teams 平台的**资产真源 + 平台组件**，并通过环境变量 `CHATFLOWS_ROOT`（默认解析为本仓库目录，即 `agent-core/` 的上一级）为子仓 `agent-core/` 提供 `catalogs/`、`prompts/`、`flows/` 三类资产。`agent-core` 启动时会经 `CHATFLOWS_ROOT` 读取以下具体资产：
+- `catalogs/` 下的行业/场景/能力等词表 YAML
+- `prompts/` 下的千问提示词模板
+- `flows/Chatflow-*/` 下的工作流模板包（meta.yaml + BRIEF.md + workflow/*.yaml）
 
 当前仓库的三层：
 
@@ -48,7 +51,7 @@ VibeSales/                  ← 本仓（git root）
 └── agent-core/             ← 独立子仓（被 .gitignore 排除，自行 clone）
 ```
 
-本机点 UI（不起 manager）：见 [`docs/agentteams/启动说明.md`](./docs/agentteams/启动说明.md)。P3C 浏览器自动化（向导 → 发布 → 试聊）见同文档 §8.3，入口 `./scripts/run-console-p3c-e2e.sh`。
+重新拉代码后跑通 P1～P4 到发布与试聊的完整初始化步骤：见 [`docs/agentteams/部署初始化.md`](./docs/agentteams/部署初始化.md)。本机点 UI（不起 manager）：见 [`docs/agentteams/启动说明.md`](./docs/agentteams/启动说明.md)。P3C 浏览器自动化（向导 → 发布 → 试聊）见同文档 §8.3，入口 `./scripts/run-console-p3c-e2e.sh`。
 
 ## 文档导航
 
@@ -57,6 +60,8 @@ VibeSales/                  ← 本仓（git root）
 - [base_README.md](./base_README.md)（本文件）：项目总览、模块定位、快速开始
 - [ARCHITECTURE.MD](./ARCHITECTURE.MD)：平台整体架构 + agent-core 业务架构、交互链路、运行模式
 - [DEPLOY.MD](./DEPLOY.MD)：根仓完整部署（含 OS 差异、Compose、环境要求）、验证步骤、操作手册
+- [`docs/agentteams/部署初始化.md`](./docs/agentteams/部署初始化.md)：重新拉代码后跑通 P1～P4 到发布与试聊的初始化指南
+- [`docs/agentteams/启动说明.md`](./docs/agentteams/启动说明.md)：本机点 UI（不起 manager）与 P3C 浏览器自动化的操作说明（§8.3 含向导→发布→试聊 E2E）
 
 ## 总体架构
 

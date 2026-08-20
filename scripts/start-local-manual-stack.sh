@@ -18,8 +18,11 @@ nest_port="${MANUAL_NEST_PORT:-23401}"
 runtime_port="${MANUAL_RUNTIME_PORT:-28288}"
 console_port="${MANUAL_CONSOLE_PORT:-25273}"
 # 本机固定串：只喂给 127.0.0.1 上的临时进程，不是任何环境的真凭证。
-# 打印出来是有意的 —— 手工验证要把它们粘到 Console 的「连接凭证」抽屉里。
+# 三本 Wizard Bearer 同时注入 Nest 与 Console，欢迎页会显示账号下拉。
 wizard_token="manual-dev-wizard-token-0123456789"
+wizard_agri_token="manual-dev-agri-token-0123456789"
+wizard_edu_token="manual-dev-edu-token-0123456789"
+wizard_credentials="[{\"token\":\"$wizard_token\",\"client_code\":\"acme_beauty\",\"roles\":[\"user\",\"admin\"]},{\"token\":\"$wizard_agri_token\",\"client_code\":\"acme_agri\",\"roles\":[\"user\",\"admin\"]},{\"token\":\"$wizard_edu_token\",\"client_code\":\"acme_edu\",\"roles\":[\"user\",\"admin\"]}]"
 pipeline_token="manual-dev-pipeline-token-0123456789"
 runtime_token="manual-dev-runtime-token-0123456789"
 runtime_admin_token="manual-dev-runtime-admin-0123456789"
@@ -72,7 +75,11 @@ require_free "$console_port" "agent-console"
 
 echo "[1/4] export a published P3C Blueprint seed (agent-runtime needs one to serve /api/v1/chat)"
 cd "$root_dir/agent-core"
-[[ -f dist/main-web.js ]] || { echo "agent-core/dist missing; run 'npm run build' in agent-core" >&2; exit 1; }
+# 手工栈跑的是 node dist/main-web.js；源码比 dist 新时必须重编，否则会继续端出旧 S1 分组（美妆/个护）。
+if [[ ! -f dist/main-web.js ]] || [[ -n "$(find src -name '*.ts' -newer dist/main-web.js -print -quit 2>/dev/null)" ]]; then
+  echo "building agent-core dist (missing or older than src)"
+  npm run build
+fi
 ARTIFACT_STORE=file ARTIFACT_STORE_FILE="$work_dir/seed-store.json" FLOW_PLATFORM_MODE=local \
   DEMO_TRACE=0 LOG_STDERR=off BLUEPRINT_SMOKE_DIR="$work_dir/blueprints" \
   npm run test:p3c-industries >"$work_dir/blueprints.log" 2>&1 || { tail -40 "$work_dir/blueprints.log" >&2; exit 1; }
@@ -93,6 +100,7 @@ mkdir -p "$work_dir/static" "$work_dir/flow-projects"
     AGENT_RUNTIME_ADMIN_TOKEN="$runtime_admin_token" \
     LOG_STDERR=on LOG_FILE=off DEMO_TRACE=0 \
     WEB_HOST=127.0.0.1 WEB_PORT="$nest_port" WEB_STATIC_ROOT="$work_dir/static" \
+    WEB_AUTH_CREDENTIALS="$wizard_credentials" \
     WEB_AUTH_TOKEN="$wizard_token" WEB_AUTH_CLIENT_CODE=acme_beauty \
     PIPELINE_CONTROL_TOKEN="$pipeline_token" \
     PIPELINE_APPROVAL_SIGNING_SECRET="$approval_secret" \
@@ -127,6 +135,7 @@ echo "[4/4] start agent-console dev server on http://127.0.0.1:$console_port"
   NEST_API="http://127.0.0.1:$nest_port" RUNTIME_API="http://127.0.0.1:$runtime_port" \
     MANAGER_API="http://127.0.0.1:28090" ORCHESTRATION_MODE=local ARTIFACT_INSPECTOR=on \
     RUNTIME_ADMIN_TOKEN="$runtime_admin_token" \
+    WEB_AUTH_CREDENTIALS="$wizard_credentials" \
     WEB_AUTH_TOKEN="$wizard_token" PIPELINE_CONTROL_TOKEN="$pipeline_token" \
     RUNTIME_AUTH_TOKEN="$runtime_token" \
     CONSOLE_HOST=127.0.0.1 CONSOLE_PORT="$console_port" \
@@ -143,7 +152,9 @@ cat <<INFO
 
 打开即可用：连接凭证已预填本机开发串，一般不用再打开抽屉。若要核对或改写：
 
-  Wizard Bearer            $wizard_token
+  Wizard Bearer（谷雨）    $wizard_token
+  Wizard Bearer（极飞）    $wizard_agri_token
+  Wizard Bearer（教育）    $wizard_edu_token
   Pipeline Control Bearer  $pipeline_token
   Runtime Bearer           $runtime_token
   Runtime Admin Bearer     $runtime_admin_token

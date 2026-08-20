@@ -5,7 +5,7 @@ import * as path from 'path';
 import { AppModule } from '../src/app.module';
 import { P3Service } from '../src/p3/p3.service';
 import { P3cService } from '../src/p3c/p3c.service';
-import { WizardService } from '../src/wizard/wizard.service';
+import { UNMAPPED_SCENE_ID, WizardService } from '../src/wizard/wizard.service';
 
 const cases = [
   { industryId:'beauty', goalIds:['faq_deflect','present_recommend','collect_escalate'], clientCode:'smoke_beauty', scene:'beauty_wecom_cs' },
@@ -28,7 +28,10 @@ async function main() {
     const check=await p3c.blueprintSelfcheck(bp);if(!check.ok||check.checks.length!==13)throw new Error(c.industryId+' Blueprint selfcheck failed');
     fs.writeFileSync(path.join(output,c.industryId+'.json'),JSON.stringify({...bp,version:1},null,2));
   }
+  const autoSummary=wizard.buildSummary({industryId:'auto',goalIds:['faq_deflect','collect_escalate'],businessBrief:'汽车售后客服'});
+  const autoP1=wizard.buildPhase1Result({clientCode:'smoke_auto',channel:'wecom',stage:'S1_SUMMARY',industryId:'auto',goalIds:['faq_deflect','collect_escalate'],summary:autoSummary,nextAction:'preview'});
+  if(autoP1.gate!=='PASS'||autoP1.triage.scene_id!==UNMAPPED_SCENE_ID)throw new Error('auto P1 must PASS unmapped, got '+autoP1.gate+'/'+autoP1.triage.scene_id);
   await app.close();
-  process.stdout.write('[PASS] Node P1/P3C exported 4 industry Blueprint smokes\n');
+  process.stdout.write('[PASS] Node P1/P3C exported 4 industry Blueprint smokes; auto→unmapped\n');
 }
 main().then(()=>process.exit(0)).catch(error=>{console.error(error);process.exit(1);});

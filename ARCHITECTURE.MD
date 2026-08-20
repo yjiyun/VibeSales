@@ -518,7 +518,7 @@ local 模式下 PipelineService 自身串起完整 P1→P4；platform 模式下 
 5. `agent-runtime/RuntimeApplication -> RuntimeService -> BlueprintProjector`
 6. `agent-core/src/main.ts / main-web.ts / main-mcp.ts`（三入口装配差异）
 7. `agent-core/src/common/trace-sink.ts` 与四类 sink + 两独立文件 sink
-8. `worker-packages/skills/*/SKILL.md`
+6. `worker-packages/skills/*/SKILL.md`
 
 ## 9. 结论
 

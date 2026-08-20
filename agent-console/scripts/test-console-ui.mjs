@@ -10,7 +10,8 @@
  * 三个后端由 CONSOLE_UI_BASE / 相关 env 注入，本文件不负责起进程（起停见
  * `scripts/run-console-ui-evidence.sh`），因此可以在任意已就绪的本机环境上重放。
  *
- * 凭证走 `page.addInitScript` 预置 localStorage（与 `src/shared/auth.js` 的键名一致），
+ * 凭证：新 context 没有 boot-fingerprint，`auth.js` 会用本次 Vite 注入覆盖
+ * localStorage。本脚本预置的 token 须与起 Console 时的 WEB_AUTH_TOKEN 等一致；
  * 页面上凭证输入框都是 `type="password" show-password`，截图不泄露明文。
  */
 
@@ -104,7 +105,8 @@ try {
   const page = await context.newPage();
   page.on('console', message => { if (message.type() === 'error') consoleErrors.push(message.text()); });
   page.on('requestfailed', request => failedRequests.push(`${request.method()} ${request.url()}`));
-  // 三个 Bearer 分流 + role/actor 走 localStorage，键名必须与 src/shared/auth.js 一致。
+  // 三个 Bearer 分流 + role/actor。无 fingerprint 时 auth.js 会按本次 Vite env 水合，
+  // 因此 CONSOLE_UI_* 必须与起 Console 的 WEB_AUTH_TOKEN / PIPELINE / RUNTIME 相同。
   await page.addInitScript(([wizard, pipeline, runtime, role, who]) => {
     localStorage.setItem('agent-console.wizard-token', wizard);
     localStorage.setItem('agent-console.pipeline-token', pipeline);
@@ -127,11 +129,12 @@ try {
 
   await page.locator('.wz-start__form').getByRole('button', { name: '开始' }).click();
 
-  // S1 行业单选：点击即提交
+  // S1 行业：点选单选钮后再确认
   const industryCard = page.locator('.wz-qcard').last();
   await industryCard.getByText('你所在的行业是什么？').waitFor();
+  await industryCard.locator('.wz-opt', { hasText: '电商与零售' }).first().click();
   await shot(page, 'wizard-s1-industry', industryCard);
-  await industryCard.locator('.wz-opt', { hasText: '美妆' }).first().click();
+  await industryCard.getByRole('button', { name: '确认' }).click();
 
   // S2 业务目标多选：勾三项后点提交
   const goalsCard = page.locator('.wz-qcard:not(.is-history)').last();
@@ -146,7 +149,7 @@ try {
   const picked = await goalsCard.locator('.wz-opt.is-active').count();
   assert.equal(picked, 3, `业务目标应勾中三项，实际 ${picked}`);
   await shot(page, 'wizard-s2-goals', goalsCard);
-  await goalsCard.getByRole('button', { name: '提交' }).click();
+  await goalsCard.getByRole('button', { name: '确认' }).click();
 
   // S3 业务简述：自由文本走底部 XSender
   const briefCard = page.locator('.wz-qcard:not(.is-history)').last();
@@ -176,29 +179,26 @@ try {
   await page.locator('.wz-header').getByText('已完成', { exact: true }).waitFor();
   await shot(page, 'wizard-result-gate-pass', result);
 
-  // §8.6/§8.7：CTA「先看看效果」直串 P2，匹配结果落成时间线独立一格
-  const matches = page.locator('.wz-timeline-item.is-match');
-  await matches.first().waitFor({ timeout: 60_000 });
-  const matched = await matches.count();
-  await shot(page, 'wizard-p2-match', matches.first());
+  // §8.6/§8.7：CTA「先看看效果」直串 P2，匹配结果嵌在「向导已完成」灰底折叠区
+  const embed = result.locator('.wz-match-embed');
+  await embed.getByText(/这版会怎么工作/).waitFor({ timeout: 60_000 });
+  await shot(page, 'wizard-p2-match', result);
 
-  // 重跑 P2：旧卡降级为历史，新卡进流末尾
-  await result.getByRole('button', { name: /重跑匹配（P2）|先看看效果（P2 匹配）/ }).click();
-  await page.waitForFunction(
-    count => document.querySelectorAll('.wz-timeline-item.is-match').length > count,
-    matched,
-    { timeout: 60_000 },
-  );
-  assert.ok(
-    await page.locator('.wz-timeline-item.is-match .wz-match.is-history').count() > 0,
-    '重跑 P2 后旧匹配卡应降级为历史版本',
-  );
-  await shot(page, 'wizard-p2-rerun-history', page.locator('.wz-timeline-item.is-match').last());
+  // 重跑 P2：展开折叠后点内嵌按钮，结果原地更新（不再另占时间线一格）
+  await embed.locator('.wz-match-embed__intro').click();
+  await embed.getByRole('button', { name: '重跑匹配' }).click();
+  await page.locator('.wz-thinking').waitFor({ timeout: 15_000 });
+  await page.locator('.wz-thinking').waitFor({ state: 'hidden', timeout: 60_000 });
+  await embed.getByRole('button', { name: '重跑匹配' }).waitFor();
+  await shot(page, 'wizard-p2-rerun-history', result);
 
   // 结果卡 CTA 生成：local 模式必须经此入口，提交的是权威 Phase1Result
-  const buildButton = result.getByRole('button', { name: /开始生成（local）/ });
+  const buildButton = result.getByRole('button', { name: /开始构建（local）/ });
   await buildButton.waitFor();
   await buildButton.click();
+  const buildCard = page.locator('.wz-build').last();
+  await buildCard.getByText('构建智能体').waitFor({ timeout: 15_000 });
+  await buildCard.locator('.wz-build__wait').first().waitFor();
   const publish = page.locator('.wz-publish').last();
   await publish.getByText('WAITING_HUMAN').waitFor({ timeout: 60_000 });
   const runId = await page.evaluate(() => localStorage.getItem('agent-console.last-run-id'));
@@ -214,6 +214,7 @@ try {
   await publish.getByRole('button', { name: '确认发布' }).click();
   await page.locator('.el-message--success', { hasText: '已发布' }).waitFor({ timeout: 60_000 });
   await publish.getByText('已发布').first().waitFor();
+  await publish.locator('.wz-match-embed').getByText(/这版会怎么工作/).waitFor();
   await shot(page, 'wizard-published', publish);
 
   // 编排看板仍可排障：接过 run_id，验证时间线，并重放审批必须 409

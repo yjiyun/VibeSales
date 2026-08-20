@@ -1,0 +1,315 @@
+name: ${COMPOSE_PROJECT_NAME:-chatflows-local-true}
+
+services:
+  postgres:
+    image: postgres:16.4-bookworm
+    restart: unless-stopped
+    environment:
+      POSTGRES_DB: ${POSTGRES_DB:-chatflows}
+      POSTGRES_USER: postgres
+      POSTGRES_PASSWORD: ${POSTGRES_ADMIN_PASSWORD:?required}
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U postgres -d ${POSTGRES_DB:-chatflows}"]
+      interval: 5s
+      timeout: 3s
+      retries: 30
+    ports:
+      - "127.0.0.1:${LOCAL_POSTGRES_PORT:-15432}:5432"
+    volumes:
+      - postgres-data:/var/lib/postgresql/data
+    networks: [chatflows_local]
+
+  redis:
+    image: redis:7.2.5-bookworm
+    restart: unless-stopped
+    command: ["redis-server", "--appendonly", "yes"]
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 5s
+      timeout: 3s
+      retries: 30
+    ports:
+      - "127.0.0.1:${LOCAL_REDIS_PORT:-16379}:6379"
+    volumes:
+      - redis-data:/data
+    networks: [chatflows_local]
+
+  minio:
+    image: minio/minio:RELEASE.2025-07-23T15-54-02Z
+    restart: unless-stopped
+    command: ["server", "/data", "--console-address", ":9001"]
+    environment:
+      MINIO_ROOT_USER: ${MINIO_ROOT_USER:?required}
+      MINIO_ROOT_PASSWORD: ${MINIO_ROOT_PASSWORD:?required}
+    healthcheck:
+      test: ["CMD", "curl", "-fsS", "http://127.0.0.1:9000/minio/health/live"]
+      interval: 5s
+      timeout: 3s
+      retries: 30
+    ports:
+      - "127.0.0.1:${LOCAL_MINIO_API_PORT:-19010}:9000"
+      - "127.0.0.1:${LOCAL_MINIO_CONSOLE_PORT:-19011}:9001"
+    volumes:
+      - minio-data:/data
+    networks: [chatflows_local]
+
+  minio-init:
+    image: minio/mc:RELEASE.2025-05-21T01-59-54Z-cpuv1
+    restart: "no"
+    depends_on:
+      minio: { condition: service_healthy }
+    entrypoint: ["/bin/sh", "-ec"]
+    command:
+      - |
+        until mc alias set local http://minio:9000 "$$MINIO_ROOT_USER" "$$MINIO_ROOT_PASSWORD"; do sleep 2; done
+        mc ls "local/$$MINIO_BUCKET" >/dev/null 2>&1 || mc mb "local/$$MINIO_BUCKET"
+    environment:
+      MINIO_ROOT_USER: ${MINIO_ROOT_USER:?required}
+      MINIO_ROOT_PASSWORD: ${MINIO_ROOT_PASSWORD:?required}
+      MINIO_BUCKET: ${MINIO_BUCKET:-chatflows-artifacts}
+    networks: [chatflows_local]
+
+  db-init:
+    build:
+      context: ../..
+      dockerfile: deploy/local/agent-core.Dockerfile
+    restart: "no"
+    depends_on:
+      postgres: { condition: service_healthy }
+    command: ["node", "/app/local-scripts/init-agentteams-db-local.cjs"]
+    environment:
+      DATABASE_ADMIN_URL: postgresql://postgres:${POSTGRES_ADMIN_PASSWORD:?required}@postgres:5432/${POSTGRES_DB:-chatflows}
+      CHATFLOWS_APP_DB_PASSWORD: ${CHATFLOWS_APP_DB_PASSWORD:?required}
+      AGENT_RUNTIME_DB_PASSWORD: ${AGENT_RUNTIME_DB_PASSWORD:?required}
+      DATABASE_SSL: "0"
+    networks: [chatflows_local]
+
+  higress:
+    image: higress-registry.cn-hangzhou.cr.aliyuncs.com/higress/all-in-one:${HIGRESS_IMAGE_TAG:-2.1.7}
+    restart: unless-stopped
+    environment:
+      MODE: full
+      O11Y: off
+      USE_PLUGIN_SERVER: "on"
+      GATEWAY_HTTP_PORT: 8080
+      GATEWAY_HTTPS_PORT: 8443
+      CONSOLE_PORT: 8001
+    healthcheck:
+      test: ["CMD", "curl", "-fsS", "http://127.0.0.1:8001/"]
+      interval: 5s
+      timeout: 3s
+      retries: 60
+      start_period: 20s
+    ports:
+      - "127.0.0.1:${LOCAL_HIGRESS_CONSOLE_PORT:-18011}:8001"
+      - "127.0.0.1:${LOCAL_HIGRESS_GATEWAY_PORT:-18081}:8080"
+      - "127.0.0.1:${LOCAL_HIGRESS_HTTPS_PORT:-18443}:8443"
+    volumes:
+      - higress-data:/data
+    networks: [chatflows_local]
+
+  local-business-mcp:
+    image: node:22.14.0-bookworm-slim
+    restart: unless-stopped
+    working_dir: /workspace
+    command: ["node", "/workspace/scripts/local-business-mcp.mjs"]
+    environment:
+      BUSINESS_MCP_HOST: 0.0.0.0
+      BUSINESS_MCP_PORT: "3200"
+      BUSINESS_MCP_TOKEN: ${BUSINESS_MCP_BACKEND_TOKEN:?required}
+    healthcheck:
+      test: ["CMD", "node", "-e", "fetch('http://127.0.0.1:3200/healthz').then(r=>{if(!r.ok)process.exit(1)}).catch(()=>process.exit(1))"]
+      interval: 10s
+      timeout: 3s
+      retries: 20
+    ports:
+      - "127.0.0.1:${LOCAL_BUSINESS_MCP_PORT:-13200}:3200"
+    volumes:
+      - ../../scripts:/workspace/scripts:ro
+    networks:
+      chatflows_local:
+        aliases: [local-business-mcp.chatflows.local]
+
+  agent-runtime:
+    build:
+      context: ../../agent-runtime
+    restart: unless-stopped
+    depends_on:
+      db-init: { condition: service_completed_successfully }
+      redis: { condition: service_healthy }
+      higress: { condition: service_healthy }
+      local-business-mcp: { condition: service_healthy }
+    environment:
+      RUNTIME_MODE: production
+      RUNTIME_HOST: 0.0.0.0
+      RUNTIME_PORT: "8088"
+      RUNTIME_AUTH_TOKEN: ${RUNTIME_AUTH_TOKEN:?required}
+      RUNTIME_ADMIN_TOKEN: ${RUNTIME_ADMIN_TOKEN:?required}
+      RUNTIME_MODEL: ${RUNTIME_MODEL:-dashscope:deepseek-v4-flash-0731}
+      RUNTIME_LLM_BASE_URL: http://higress:8080/v1
+      RUNTIME_LLM_TOKEN: ${HIGRESS_CONSUMER_TOKEN:?required}
+      AGENT_MODEL_NAME: ${QWEN_MODEL:-deepseek-v4-flash-0731}
+      AGENT_MODEL_BASE_URL: http://higress:8080/v1
+      AGENT_MODEL_API_KEY: ${HIGRESS_CONSUMER_TOKEN:?required}
+      AGENTSCOPE_WORKSPACE: /app/workspace
+      AGENT_RUNTIME_DATABASE_URL: jdbc:postgresql://postgres:5432/${POSTGRES_DB:-chatflows}
+      DATABASE_USER: agent_runtime_login
+      DATABASE_PASSWORD: ${AGENT_RUNTIME_DB_PASSWORD:?required}
+      REDIS_URL: redis://redis:6379/0
+      RUNTIME_MCP_URL: http://higress:8080/mcp-servers/business-tools/mcp
+      RUNTIME_MCP_TOKEN: ${HIGRESS_CONSUMER_TOKEN:?required}
+      BLUEPRINT_ADMIN_URL: http://agent-core-bff:3101
+      BLUEPRINT_ADMIN_TOKEN: ${BLUEPRINT_ADMIN_TOKEN:?required}
+      AGENTLOOP_EXPORTER: ${AGENTLOOP_EXPORTER:-off}
+      AGENTLOOP_SAMPLE_RATE: ${AGENTLOOP_SAMPLE_RATE:-1.0}
+      AGENTLOOP_PROTOCOL: ${AGENTLOOP_PROTOCOL:-otlp}
+      OTEL_SERVICE_NAME: vibe-sales-runtime-local
+      OTEL_EXPORTER_OTLP_TRACES_ENDPOINT: ${OTEL_EXPORTER_OTLP_TRACES_ENDPOINT:-}
+      OTEL_EXPORTER_OTLP_PROTOCOL: ${OTEL_EXPORTER_OTLP_PROTOCOL:-http/protobuf}
+      OTEL_RESOURCE_ATTRIBUTES: ${OTEL_RESOURCE_ATTRIBUTES:-}
+      OTEL_EXPORTER_OTLP_HEADERS: ${OTEL_EXPORTER_OTLP_HEADERS:-}
+      ARMS_LICENSE_KEY: ${ARMS_LICENSE_KEY:-}
+      AGENTLOOP_ENDPOINT: ${AGENTLOOP_ENDPOINT:-}
+      AGENTLOOP_ACCESS_KEY: ${AGENTLOOP_ACCESS_KEY:-}
+      AGENTLOOP_ACCESS_SECRET: ${AGENTLOOP_ACCESS_SECRET:-}
+    healthcheck:
+      test: ["CMD", "java", "-cp", "/app/classes:/app/lib/*", "com.yjiyun.chatflows.runtime.RuntimeHealthCheck"]
+      interval: 10s
+      timeout: 4s
+      start_period: 30s
+      retries: 12
+    ports:
+      - "127.0.0.1:${LOCAL_RUNTIME_PORT:-18098}:8088"
+    networks: [chatflows_local]
+
+  agent-core:
+    build:
+      context: ../..
+      dockerfile: deploy/local/agent-core.Dockerfile
+    restart: unless-stopped
+    depends_on:
+      db-init: { condition: service_completed_successfully }
+      minio-init: { condition: service_completed_successfully }
+      agent-runtime: { condition: service_healthy }
+      higress: { condition: service_healthy }
+    environment:
+      WEB_HOST: 0.0.0.0
+      WEB_PORT: "3100"
+      ARTIFACT_STORE: postgres
+      DATABASE_URL: postgresql://chatflows_app_login:${CHATFLOWS_APP_DB_PASSWORD:?required}@postgres:5432/${POSTGRES_DB:-chatflows}
+      DATABASE_POOL_SIZE: "10"
+      DATABASE_SSL: "0"
+      MINIO_ENDPOINT: http://minio:9000
+      MINIO_ACCESS_KEY: ${MINIO_ROOT_USER:?required}
+      MINIO_SECRET_KEY: ${MINIO_ROOT_PASSWORD:?required}
+      MINIO_BUCKET: ${MINIO_BUCKET:-chatflows-artifacts}
+      FLOW_PLATFORM_MODE: local
+      AGENT_RUNTIME_URL: http://agent-runtime:8088
+      AGENT_RUNTIME_TOKEN: ${RUNTIME_AUTH_TOKEN:?required}
+      BLUEPRINT_ADMIN_TOKEN: ${BLUEPRINT_ADMIN_TOKEN:?required}
+      PIPELINE_CONTROL_TOKEN: ${PIPELINE_CONTROL_TOKEN:?required}
+      PIPELINE_APPROVAL_SIGNING_SECRET: ${PIPELINE_APPROVAL_SIGNING_SECRET:?required}
+      MCP_SERVER_TOKEN: ${HIGRESS_CONSUMER_TOKEN:?required}
+      P3C_BUSINESS_MCP_URL: http://higress:8080/mcp-servers/business-tools/mcp
+      QWEN_BASE_URL: http://higress:8080/v1
+      DASHSCOPE_API_KEY: ${HIGRESS_CONSUMER_TOKEN:?required}
+      QWEN_GATEWAY_TOKEN: ${HIGRESS_CONSUMER_TOKEN:?required}
+      QWEN_MODEL: ${QWEN_MODEL:-deepseek-v4-flash-0731}
+      WEB_AUTH_TOKEN: ${WEB_AUTH_TOKEN:?required}
+      WEB_AUTH_CLIENT_CODE: ${WEB_AUTH_CLIENT_CODE:?required}
+      WEB_AUTH_CREDENTIALS: ${WEB_AUTH_CREDENTIALS:-}
+      ORCHESTRATION_MODE: local
+      ARTIFACT_INSPECTOR: on
+      LOG_STDERR: ${LOG_STDERR:-on}
+      LOG_FILE: "off"
+      AGENTLOOP_EXPORTER: ${AGENTLOOP_EXPORTER:-off}
+      AGENTLOOP_SAMPLE_RATE: ${AGENTLOOP_SAMPLE_RATE:-1.0}
+      AGENTLOOP_PROTOCOL: ${AGENTLOOP_PROTOCOL:-otlp}
+      OTEL_SERVICE_NAME: vibe-sales-nest-local
+      OTEL_EXPORTER_OTLP_TRACES_ENDPOINT: ${OTEL_EXPORTER_OTLP_TRACES_ENDPOINT:-}
+      OTEL_EXPORTER_OTLP_PROTOCOL: ${OTEL_EXPORTER_OTLP_PROTOCOL:-http/protobuf}
+      OTEL_RESOURCE_ATTRIBUTES: ${OTEL_RESOURCE_ATTRIBUTES:-}
+      OTEL_EXPORTER_OTLP_HEADERS: ${OTEL_EXPORTER_OTLP_HEADERS:-}
+      ARMS_LICENSE_KEY: ${ARMS_LICENSE_KEY:-}
+      AGENTLOOP_ENDPOINT: ${AGENTLOOP_ENDPOINT:-}
+      AGENTLOOP_ACCESS_KEY: ${AGENTLOOP_ACCESS_KEY:-}
+      AGENTLOOP_ACCESS_SECRET: ${AGENTLOOP_ACCESS_SECRET:-}
+    ports:
+      - "127.0.0.1:${LOCAL_NEST_MCP_PORT:-13110}:3100"
+    networks: [chatflows_local]
+
+  agent-core-bff:
+    build:
+      context: ../..
+      dockerfile: deploy/local/agent-core.Dockerfile
+    restart: unless-stopped
+    command: ["node", "dist/main-web.js"]
+    depends_on:
+      db-init: { condition: service_completed_successfully }
+      minio-init: { condition: service_completed_successfully }
+      agent-runtime: { condition: service_healthy }
+    environment:
+      WEB_HOST: 0.0.0.0
+      WEB_PORT: "3101"
+      WEB_STATIC_ROOT: /tmp/agent-console-dist
+      WEB_AUTH_TOKEN: ${WEB_AUTH_TOKEN:?required}
+      WEB_AUTH_CLIENT_CODE: ${WEB_AUTH_CLIENT_CODE:?required}
+      WEB_AUTH_CREDENTIALS: ${WEB_AUTH_CREDENTIALS:-}
+      ORCHESTRATION_MODE: local
+      ARTIFACT_STORE: postgres
+      DATABASE_URL: postgresql://chatflows_app_login:${CHATFLOWS_APP_DB_PASSWORD:?required}@postgres:5432/${POSTGRES_DB:-chatflows}
+      DATABASE_POOL_SIZE: "10"
+      DATABASE_SSL: "0"
+      MINIO_ENDPOINT: http://minio:9000
+      MINIO_ACCESS_KEY: ${MINIO_ROOT_USER:?required}
+      MINIO_SECRET_KEY: ${MINIO_ROOT_PASSWORD:?required}
+      MINIO_BUCKET: ${MINIO_BUCKET:-chatflows-artifacts}
+      FLOW_PLATFORM_MODE: local
+      AGENT_RUNTIME_URL: http://agent-runtime:8088
+      AGENT_RUNTIME_TOKEN: ${RUNTIME_AUTH_TOKEN:?required}
+      BLUEPRINT_ADMIN_TOKEN: ${BLUEPRINT_ADMIN_TOKEN:?required}
+      PIPELINE_CONTROL_TOKEN: ${PIPELINE_CONTROL_TOKEN:?required}
+      PIPELINE_APPROVAL_SIGNING_SECRET: ${PIPELINE_APPROVAL_SIGNING_SECRET:?required}
+      MCP_SERVER_TOKEN: ${HIGRESS_CONSUMER_TOKEN:?required}
+      P3C_BUSINESS_MCP_URL: http://higress:8080/mcp-servers/business-tools/mcp
+      QWEN_BASE_URL: http://higress:8080/v1
+      DASHSCOPE_API_KEY: ${HIGRESS_CONSUMER_TOKEN:?required}
+      QWEN_GATEWAY_TOKEN: ${HIGRESS_CONSUMER_TOKEN:?required}
+      QWEN_MODEL: ${QWEN_MODEL:-deepseek-v4-flash-0731}
+      ARTIFACT_INSPECTOR: on
+      LOG_STDERR: ${LOG_STDERR:-on}
+      LOG_FILE: "off"
+    healthcheck:
+      test: ["CMD", "node", "-e", "fetch('http://127.0.0.1:3101/api/health',{headers:{authorization:'Bearer '+process.env.WEB_AUTH_TOKEN,'x-role':'user','x-actor':'health-probe'}}).then(r=>{if(!r.ok)process.exit(1)}).catch(()=>process.exit(1))"]
+      interval: 10s
+      timeout: 5s
+      retries: 20
+    ports:
+      - "127.0.0.1:${LOCAL_NEST_BFF_PORT:-13101}:3101"
+    networks: [chatflows_local]
+
+  agent-console:
+    build:
+      context: ../..
+      dockerfile: deploy/local/agent-console.Dockerfile
+    restart: unless-stopped
+    depends_on:
+      agent-core-bff: { condition: service_healthy }
+      agent-runtime: { condition: service_healthy }
+    ports:
+      - "127.0.0.1:${LOCAL_CONSOLE_PORT:-15174}:8080"
+    healthcheck:
+      test: ["CMD", "wget", "-q", "-O", "/dev/null", "http://127.0.0.1:8080/"]
+      interval: 10s
+      timeout: 5s
+      retries: 20
+    networks: [chatflows_local]
+
+volumes:
+  postgres-data:
+  redis-data:
+  minio-data:
+  higress-data:
+
+networks:
+  chatflows_local:

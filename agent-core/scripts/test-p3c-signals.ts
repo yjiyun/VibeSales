@@ -1,15 +1,39 @@
 /**
- * P3C 分流信号：business_brief 规则抽取回归。
- * 对照 fixtures/wizard-e2e 主用例 / 对照用例简述。
+ * P3C 默认分流：否决词 / dag_fit / unmapped scene 回归。
  *
  *   npm run test:p3c-signals
  */
 import { NestFactory } from '@nestjs/core';
 import { AppModule } from '../src/app.module';
-import { WizardService } from '../src/wizard/wizard.service';
+import { MatchResult } from '../src/common/types';
+import {
+  UNMAPPED_SCENE_ID,
+  WizardService,
+} from '../src/wizard/wizard.service';
+
+function hit(dag_fit: 'high' | 'low'): MatchResult {
+  return {
+    client_code: 'acme_beauty',
+    action: 'hit',
+    template_id: 'guyu',
+    dag_fit,
+    industry_aligned: dag_fit === 'high',
+  };
+}
+
+function custom(): MatchResult {
+  return {
+    client_code: 'acme_beauty',
+    action: 'custom',
+    dag_fit: 'low',
+    industry_aligned: false,
+  };
+}
 
 async function main() {
-  const app = await NestFactory.createApplicationContext(AppModule, { logger: false });
+  const app = await NestFactory.createApplicationContext(AppModule, {
+    logger: false,
+  });
   try {
     const wizard = app.get(WizardService);
     const p3cBrief =
@@ -18,9 +42,11 @@ async function main() {
       '我们是美妆品牌，要在企业微信做私聊客服：自动回答护肤咨询、按肤质推荐产品、复杂或投诉转人工。';
 
     const s1 = wizard.inferP3cSignals(p3cBrief);
-    if (!s1.needs_long_term_memory) throw new Error('p3c brief must set needs_long_term_memory');
+    if (!s1.needs_long_term_memory)
+      throw new Error('p3c brief must set needs_long_term_memory');
     const s2 = wizard.inferP3cSignals(p3Brief);
-    if (s2.needs_long_term_memory) throw new Error('p3 brief must NOT set needs_long_term_memory');
+    if (s2.needs_long_term_memory)
+      throw new Error('p3 brief must NOT set needs_long_term_memory');
 
     const summaryP3c = wizard.buildSummary({
       industryId: 'beauty',
@@ -37,7 +63,8 @@ async function main() {
       nextAction: 'preview',
     });
     if (phase1c.gate !== 'PASS') throw new Error('expected PASS, got ' + phase1c.gate);
-    if (phase1c.triage.scene_id !== 'beauty_wecom_cs') throw new Error('scene mismatch');
+    if (phase1c.triage.scene_id !== 'beauty_wecom_cs')
+      throw new Error('scene mismatch');
     if (phase1c.triage.needs_long_term_memory !== true) {
       throw new Error('phase1c missing memory flag');
     }
@@ -60,19 +87,19 @@ async function main() {
       throw new Error('phase1 must not set memory');
     }
 
-    const pathC = wizard.decideBuildPath(phase1c.triage, {
-      client_code: 'acme_beauty',
-      action: 'hit',
-      template_id: 'guyu',
-    });
-    if (pathC !== 'P3C') throw new Error('expected P3C, got ' + pathC);
+    const pathC = wizard.decideBuildPath(phase1c.triage, hit('high'));
+    if (pathC !== 'P3C') throw new Error('expected P3C veto, got ' + pathC);
 
-    const pathP3 = wizard.decideBuildPath(phase1.triage, {
-      client_code: 'acme_beauty',
-      action: 'hit',
-      template_id: 'guyu',
-    });
-    if (pathP3 !== 'P3') throw new Error('expected P3, got ' + pathP3);
+    const pathP3 = wizard.decideBuildPath(phase1.triage, hit('high'));
+    if (pathP3 !== 'P3') throw new Error('expected P3 aligned hit, got ' + pathP3);
+
+    const pathLowHit = wizard.decideBuildPath(phase1.triage, hit('low'));
+    if (pathLowHit !== 'P3C')
+      throw new Error('expected P3C for low dag_fit hit, got ' + pathLowHit);
+
+    const pathCustom = wizard.decideBuildPath(phase1.triage, custom());
+    if (pathCustom !== 'P3C')
+      throw new Error('expected P3C for custom, got ' + pathCustom);
 
     const forced = wizard.buildPhase1Result({
       clientCode: 'acme_beauty',
@@ -88,7 +115,7 @@ async function main() {
       throw new Error('explicit flag ignored');
     }
 
-    // LLM 改写 summary 丢触发词时，仍可用 sourceBrief / 显式入参保住 P3C。
+    // LLM 改写 summary 丢触发词时，仍可用 sourceBrief / 显式入参保住否决。
     const polished = wizard.buildSummary({
       industryId: 'beauty',
       goalIds: ['faq_deflect', 'present_recommend', 'collect_escalate'],
@@ -108,7 +135,57 @@ async function main() {
       throw new Error('sourceBrief must preserve memory signal after polish');
     }
 
-    process.stdout.write('[PASS] p3c signal inference + decideBuildPath\n');
+    const autoSummary = wizard.buildSummary({
+      industryId: 'auto',
+      goalIds: ['faq_deflect', 'collect_escalate'],
+      businessBrief: '汽车售后客服，答故障和保养，复杂转人工。',
+    });
+    const autoPhase = wizard.buildPhase1Result({
+      clientCode: 'acme_beauty',
+      channel: 'wecom',
+      stage: 'S1_SUMMARY',
+      industryId: 'auto',
+      goalIds: ['faq_deflect', 'collect_escalate'],
+      summary: autoSummary,
+      nextAction: 'preview',
+    });
+    if (autoPhase.gate !== 'PASS')
+      throw new Error('auto industry must PASS, got ' + autoPhase.gate);
+    if (autoPhase.triage.scene_id !== UNMAPPED_SCENE_ID) {
+      throw new Error(
+        'auto must map to unmapped, got ' + autoPhase.triage.scene_id,
+      );
+    }
+    if (!autoPhase.triage.risk_flags?.includes('no_template_scene')) {
+      throw new Error('auto must set no_template_scene');
+    }
+    const autoPath = wizard.decideBuildPath(autoPhase.triage, custom());
+    if (autoPath !== 'P3C')
+      throw new Error('unmapped custom must be P3C, got ' + autoPath);
+
+    const eduFaq = wizard.buildPhase1Result({
+      clientCode: 'acme_edu',
+      channel: 'wecom',
+      stage: 'S1_SUMMARY',
+      industryId: 'edu',
+      goalIds: ['faq_deflect'],
+      summary: wizard.buildSummary({
+        industryId: 'edu',
+        goalIds: ['faq_deflect'],
+        businessBrief: '教育机构常见问题答疑。',
+      }),
+      nextAction: 'preview',
+    });
+    if (eduFaq.triage.scene_id !== UNMAPPED_SCENE_ID) {
+      throw new Error(
+        'edu+FAQ must not guess recruit vs abroad, got ' +
+          eduFaq.triage.scene_id,
+      );
+    }
+
+    process.stdout.write(
+      '[PASS] p3c default routing + veto + unmapped scene\n',
+    );
   } finally {
     await app.close();
   }

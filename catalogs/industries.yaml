@@ -1,6 +1,9 @@
 # 行业枚举
 # meta.industries、triage.industry、scenes[].industries 必须取自本表 id
-# group：向导分组展示（对齐竞品行业簇；见 docs/产品设计.md §8）
+# group：向导分组，只允许 7 档（见 docs/产品设计.md §8）：
+#   电商与零售 / 医疗与金融 / 教育 / 招聘 / 科技与企业服务 / 泛行业与本地生活 / 汽车
+# wizard: true 的条目出现在向导 S1，展示名为 group（恰好 7 条）。
+# 装机主键仍是 id：谷雨 beauty / 极飞 agriculture，不要改这些 id。
 
 industries:
   # --- 电商与零售 ---
@@ -12,12 +15,11 @@ industries:
     name: 零售
     group: 电商与零售
     description: 门店零售、连锁、新零售
-
-  # --- 美妆个护（原有活跃模板行业，保留）---
   - id: beauty
     name: 美妆
     group: 电商与零售
-    description: 美妆护肤品牌与门店
+    wizard: true
+    description: 线上商城、门店零售、美妆个护与品牌 DTC
   - id: cosmetics
     name: 个护化妆品
     group: 电商与零售
@@ -27,7 +29,8 @@ industries:
   - id: healthcare
     name: 医疗健康
     group: 医疗与金融
-    description: 诊疗服务、家用器械、营养保健（注意合规边界）
+    wizard: true
+    description: 诊疗服务、银行理财、投保咨询（注意合规边界）
   - id: finance
     name: 金融
     group: 医疗与金融
@@ -41,12 +44,14 @@ industries:
   - id: edu
     name: 教育培训
     group: 教育
+    wizard: true
     description: 学科培训、职业培训、素质教育
 
   # --- 招聘 ---
   - id: recruiting
     name: 招聘
     group: 招聘
+    wizard: true
     description: 企业招聘、候选人接待、入职前咨询
   - id: hr_services
     name: 人力资源服务
@@ -62,12 +67,12 @@ industries:
     name: 企业服务 / SaaS
     group: 科技与企业服务
     description: ToB 软件、云服务、企业采购咨询
-
-  # --- 农业与农机 ---
+  # 极飞装机：向导展示「科技与企业服务」，写入 id 仍是 agriculture。
   - id: agriculture
     name: 农业 / 农机
-    group: 农业与农机
-    description: 植保无人机、农机设备、农服作业与售后咨询
+    group: 科技与企业服务
+    wizard: true
+    description: 软件与 SaaS、农机设备与农服作业咨询
 
   # --- 泛行业与本地生活 ---
   - id: local_life
@@ -77,10 +82,12 @@ industries:
   - id: general
     name: 通用 / 其他
     group: 泛行业与本地生活
-    description: 暂无更贴切行业时选用；区分度低，尽量少用
+    wizard: true
+    description: 到店生活服务，或暂无更贴切行业时选用
 
   # --- 汽车 ---
   - id: auto
     name: 汽车
     group: 汽车
+    wizard: true
     description: 售车、售后、配件、充电与出行服务

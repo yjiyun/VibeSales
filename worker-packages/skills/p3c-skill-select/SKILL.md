@@ -8,7 +8,7 @@ description: 当业务能力明确时，从只读 Skill 市场筛选可复用项
 - 调用条件：P3C Skill 专家阶段先执行。
 - 依赖工具：chatflows-p3c.listSkillCandidates。
 - MCP 工具调用方式（**直接调用，不要先查工具列表**）：真实工具名是 `chatflows-p3c__listSkillCandidates`（服务器名与工具名之间是**双下划线**），由运行时注入，直接发起调用即可。⚠️ 不要用 `curl .../api/agents/default/tools`、`api/tools`、`mcporter list` 去「先确认工具存在」——这些端点只返回内置工具（read_file/write_file/…），**不列出 MCP 注入的工具**，你会误判成「工具不可用」而放弃；也没有 `api/mcp/call` 这种端点。看不到列表不等于不能调用：直接调，真失败了再按失败处理报 RUN_BLOCKED。
-- MCP 报 `driver_not_found` 或连接类错误先退避重试，不要立刻报 RUN_BLOCKED：qwenpaw 的 MCP 长连接约 300 秒空闲会被底层传输超时，之后有几秒的自动重连窗口，这期间的调用失败是正常瞬时现象，不是平台永久故障。等 5 秒重试，最多 3 次（间隔 5s/10s/15s），仍失败才报 RUN_BLOCKED（带上最后一次的原始报错）。
+- MCP 报 `driver_not_found` 或连接类错误先退避重试，不要立刻报 RUN_BLOCKED：qwenpaw 的 MCP 长连接约 300 秒空闲会被底层传输超时，之后有几秒的自动重连窗口，这期间的调用失败是正常瞬时现象，不是平台永久故障。等 10 秒重试，最多 3 次（间隔 10s/20s/30s，覆盖实测最长 58 秒的 MCP client 重连抖动窗口，见 platform_bug.md §3.30），仍失败才报 RUN_BLOCKED（带上最后一次的原始报错）。
 - 失败处理：无候选时转 p3c-skill-draft。
 - 安全边界：市场只读，不 promote，不修改 catalog；只写 `shared/tasks/task-<run_id>/experts/skill.json`（**必须带 `experts/` 前缀**，写到 task 根目录会让 Leader 核验时找不到、误判缺口）。
 - 复用价值：跨租户能力复用。

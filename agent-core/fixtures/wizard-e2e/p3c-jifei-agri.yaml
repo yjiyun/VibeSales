@@ -24,7 +24,7 @@ steps:
         - deepseek-v4-pro
   - stage: S1_INDUSTRY
     action: pick
-    label: 农业 / 农机
+    label: 科技与企业服务
     expect:
       industry: agriculture
   - stage: S2_GOALS

@@ -123,3 +123,30 @@ scenes:
       - 做一个新东方留学企微接待，能答费用流程材料，高意向转规划老师
       - 留学销售工作流，要 FAQ、画像追问和转人工
     status: active
+
+  - id: unmapped
+    name: 未覆盖装机场景
+    summary: 当前行业/目标尚无对应装机模板科室；向导仍可过闸，默认走 P3C 产智能体
+    agent_family: customer_success
+    industries: []
+    slots:
+      - key: industry
+        label: 行业
+        source: industries
+        required: true
+        why: 决定从哪一类模板里挑
+      - key: role
+        label: 主要角色/职责
+        source: agent_families
+        required: true
+        why: 决定偏客服/销售/招聘等家族
+      - key: desired_capabilities
+        label: 希望具备的能力
+        source: capabilities
+        multi: true
+        required: false
+        why: 决定命中模板能力是否覆盖你的诉求
+    ask_order: [industry, role, desired_capabilities]
+    typical_prompts:
+      - 我要在企业微信里搭一个智能客服，能答常见问题，复杂的转人工
+    status: active

@@ -63,7 +63,10 @@ export class WizardController {
   catalogsPayload(@Headers() headers: Record<string,string|string[]|undefined>) {
     this.auth.require(headers);
     return {
-      industries: this.catalogs.industriesGrouped(),
+      industries: this.catalogs.wizardIndustryOptions().map((o) => ({
+        group: o.group || o.name,
+        options: [o],
+      })),
       business_goals: this.catalogs.optionsFor('business_goals'),
     };
   }

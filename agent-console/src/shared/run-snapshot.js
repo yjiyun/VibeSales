@@ -99,24 +99,42 @@ export function extractApprovalId(messages, runId) {
   return '';
 }
 
+/**
+ * 聊天文本里的 `APPROVAL_REQUIRED`/「等待 Human 审批」只是 Leader（LLM）的口头汇报，
+ * 不是权威事实——Leader 可能在 Nest 真正进入 WAITING_HUMAN 之前就编出这句话（实测发生过：
+ * run aef1e08b，approval_id 本身也是编的）。这里不再直接把 snapshot.status 改写成
+ * WAITING_HUMAN 去解锁「确认发布」，只把抠出来的 approvalId 记成待确认的线索
+ * （approvalGuess），供调用方去问一次权威源，问不到就仍然维持原状态、按钮不会点亮。
+ */
 export function applyApprovalGate(snapshot, approvalId) {
   if (!snapshot || !approvalId) return snapshot;
-  const terminal = ['SUCCEEDED', 'FAILED', 'ABORTED'].includes(snapshot.status);
+  if (snapshot.approvalId) return snapshot;
+  return { ...snapshot, approvalGuess: approvalId };
+}
+
+/** Nest 已 SUCCEEDED 时不必再走审批响应，从快照产物里抽出沙盒绑定。 */
+export function publicationFromSnapshot(snapshot) {
+  const imported = last(snapshot?.artifacts, 'import_result');
+  const binding = imported?.payload?.binding ?? {};
   return {
-    ...snapshot,
-    approvalId: snapshot.approvalId || approvalId,
-    status: terminal ? snapshot.status : 'WAITING_HUMAN',
+    clientCode: binding.client_code ?? snapshot?.clientCode ?? '',
+    runtimeAgentId: binding.runtime_agent_id ?? snapshot?.runtimeAgentId ?? '',
+    runId: snapshot?.runId ?? '',
+    sceneId: snapshot?.sceneId ?? '',
+    displayName: snapshot?.displayName ?? '',
+    buildPath: snapshot?.buildPath ?? '',
   };
 }
 
 export function publicationFromApprove(decided, snapshot) {
   const binding = decided?.result?.binding ?? {};
+  const fromSnap = publicationFromSnapshot(snapshot);
   return {
-    clientCode: binding.client_code ?? snapshot.clientCode,
-    runtimeAgentId: binding.runtime_agent_id ?? snapshot.runtimeAgentId,
+    clientCode: binding.client_code || fromSnap.clientCode,
+    runtimeAgentId: binding.runtime_agent_id || fromSnap.runtimeAgentId,
     runId: snapshot.runId,
     sceneId: snapshot.sceneId,
     displayName: snapshot.displayName,
-    buildPath: decided?.result?.path ?? snapshot.buildPath,
+    buildPath: decided?.result?.path || fromSnap.buildPath,
   };
 }

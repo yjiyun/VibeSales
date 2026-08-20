@@ -131,6 +131,11 @@ if (!fs.existsSync(renderScript)) fail('Worker Skill contracts must be bundled i
 // 语言规则在 AGENTS.md 里排系统提示最前，后面跟着英文 Skill 契约 / TEAMS.md / env context。
 // 渲染必须在 bundled 契约之后补一段中文复述，占住 SOUL.md 末尾的近位，否则规则被英文后文淹没。
 if (!fs.readFileSync(renderScript,'utf8').includes('LANGUAGE_TAIL')) fail('render must restate the Chinese language rule after bundled Skill contracts');
+// qwenpaw_worker 的 update.py:_apply_mcp_servers 只在 mcpServers[].headers 缺 Authorization 时
+// 才用容器 env 的错误 gateway key 兜底覆盖，导致 client 401/inactive（driver_not_found 根因，
+// 见 docs/agentteams/todo.md §5）。渲染必须支持显式注入 Authorization 头以永久压住这条兜底。
+if (!fs.readFileSync(renderScript,'utf8').includes('mcpToken')) fail('render must support injecting MCP Authorization headers to suppress qwenpaw gateway-key fallback');
+if (!fs.readFileSync(path.join(root,'agentteams-apply.sh'),'utf8').includes('HIGRESS_CONSUMER_TOKEN')) fail('agentteams-apply.sh must pass HIGRESS_CONSUMER_TOKEN to the resource renderer');
 if (!fs.existsSync(path.join(root,'scripts/sync-agentteams-worker-skills.js'))) fail('REST apply must synchronize declared Worker Skill files into AgentTeams MinIO');
 for (const helper of ['put-qwenpaw-mcp-credential.py','provision-agentteams-worker-mcp-credential.sh']) {
   if (!fs.existsSync(path.join(root, 'scripts', helper))) fail('missing secure Worker MCP credential helper: ' + helper);

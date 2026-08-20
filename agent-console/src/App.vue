@@ -3,7 +3,7 @@ import { onMounted, onUnmounted, ref } from 'vue';
 import { Setting } from '@element-plus/icons-vue';
 import WizardView from './wizard/WizardView.vue';
 import RunsView from './runs/RunsView.vue';
-import { auth, saveAuth } from './shared/auth';
+import { auth, restoreEnvAuth, saveAuth } from './shared/auth';
 import { NAVIGATE_EVENT } from './shared/publication';
 
 function normalizePage(value) {
@@ -25,6 +25,11 @@ function onNavigate(event) {
 
 function save() {
   saveAuth();
+  credentials.value = false;
+}
+
+function restoreFromEnv() {
+  restoreEnvAuth();
   credentials.value = false;
 }
 
@@ -62,7 +67,8 @@ onUnmounted(() => window.removeEventListener(NAVIGATE_EVENT, onNavigate));
   </el-container>
   <el-drawer v-model="credentials" title="本机开发连接凭证" size="420px">
     <el-alert type="info" :closable="false" show-icon>
-      本机开发串会预填；改过并点保存后记在当前浏览器 localStorage。生产环境应由网关或 SSO 提供。
+      随这次启动的 env 预填（local / platform 共用同一组键，不按模式另选密钥）。
+      换栈或改 token 后会自动对齐；保存只覆盖本次启动。生产环境应由网关或 SSO 提供。
     </el-alert>
     <el-form label-position="top" class="credentials">
       <el-form-item label="Wizard Bearer">
@@ -94,7 +100,10 @@ onUnmounted(() => window.removeEventListener(NAVIGATE_EVENT, onNavigate));
       <el-form-item label="X-Actor">
         <el-input v-model="auth.actor" />
       </el-form-item>
-      <el-button type="primary" @click="save">保存</el-button>
+      <div style="display: flex; gap: 8px">
+        <el-button type="primary" @click="save">保存</el-button>
+        <el-button @click="restoreFromEnv">恢复为本次启动 env</el-button>
+      </div>
     </el-form>
   </el-drawer>
 </template>

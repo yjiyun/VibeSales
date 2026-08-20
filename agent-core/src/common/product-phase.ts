@@ -4,6 +4,8 @@
  * P1 向导+意图 → PASS Triage
  * P2 模板匹配 → MatchResult（+ 可选 v0）
  * P3/P3b/P3C 为三条条件分支，最终统一进入 P4。
+ * 默认 P3C；仅行业对齐且能力覆盖的模板 hit 且无记忆/自演进否决时走 P3。
+ * P3B 保留工具面，默认路由不再选择。
  *
  * 文件/类/CLI 注释尽量引用本枚举，避免「向导里夹匹配」概念糊掉。
  */
@@ -18,7 +20,7 @@ export enum ProductPhase {
   P3_TEMPLATE_PERSONALIZE = 'P3',
   /** 低匹配、固定 DAG 场景的工作流生成 */
   P3B_FLOW_GENERATE = 'P3B',
-  /** 多轮工具/长期记忆/Skill 演进场景的 Blueprint 装配 */
+  /** 多轮工具/长期记忆/Skill 演进，以及默认的 Blueprint 装配 */
   P3C_BLUEPRINT_COMPOSE = 'P3C',
   /** 导入、绑定与试运行 */
   P4_IMPORT_RUN = 'P4',

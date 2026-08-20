@@ -27,7 +27,7 @@ let pollTimer = 0;
 
 const localEmpty =
   '当前是 local 编排，Nest 直跑 P1→P4，不向 Matrix 派活。Element / Dashboard #chat 空房间是预期。';
-const waitingRun = '点「开始生成（platform）」后，这里会投影 Team Room 的 @mention。';
+const waitingRun = '点「开始构建（platform）」后，这里会投影 Team Room 的 @mention。';
 
 watch(
   () => [props.runId, props.active, props.orchestrationMode],

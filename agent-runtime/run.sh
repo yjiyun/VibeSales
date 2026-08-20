@@ -1,7 +1,9 @@
 #!/usr/bin/env bash
 set -euo pipefail
+
 root_dir="$(cd "$(dirname "$0")" && pwd)"
 cd "$root_dir"
+
 if [[ ! -f target/dist/classes/com/yjiyun/chatflows/runtime/RuntimeApplication.class ]]; then
   ./build-dist.sh
 fi
@@ -25,7 +27,7 @@ pick_java_home() {
     printf '%s' "$candidate"
     return 0
   done
-  echo "agent-runtime needs JDK 17+ (class file 61). JAVA_HOME/Maven 当前是 Java 8。" >&2
+  echo "agent-runtime needs JDK 17+." >&2
   echo "export JAVA_HOME=/opt/homebrew/opt/openjdk@21/libexec/openjdk.jdk/Contents/Home" >&2
   return 1
 }

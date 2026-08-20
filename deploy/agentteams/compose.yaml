@@ -67,7 +67,7 @@ services:
       RUNTIME_PORT: "8088"
       RUNTIME_AUTH_TOKEN: ${RUNTIME_AUTH_TOKEN:?required}
       RUNTIME_ADMIN_TOKEN: ${RUNTIME_ADMIN_TOKEN:?required}
-      RUNTIME_MODEL: ${RUNTIME_MODEL:-dashscope:qwen-plus}
+      RUNTIME_MODEL: ${RUNTIME_MODEL:-dashscope:deepseek-v4-flash-0731}
       RUNTIME_LLM_BASE_URL: ${RUNTIME_LLM_BASE_URL:?required}
       RUNTIME_LLM_TOKEN: ${RUNTIME_LLM_TOKEN:?required}
       AGENTSCOPE_WORKSPACE: /app/workspace
@@ -77,6 +77,7 @@ services:
       REDIS_URL: redis://redis:6379/0
       RUNTIME_MCP_URL: ${RUNTIME_MCP_URL:?required}
       RUNTIME_MCP_TOKEN: ${RUNTIME_MCP_TOKEN:?required}
+      ARTIFACT_INSPECTOR: ${ARTIFACT_INSPECTOR:-on}
       BLUEPRINT_ADMIN_URL: http://agent-core:3100
       BLUEPRINT_ADMIN_TOKEN: ${BLUEPRINT_ADMIN_TOKEN:?required}
       AGENTLOOP_EXPORTER: ${AGENTLOOP_EXPORTER:-off}
@@ -99,12 +100,12 @@ services:
   agent-core:
     build:
       context: ../..
-      dockerfile: agent-core/Dockerfile
-      target: runtime
+      dockerfile: deploy/local/agent-core.Dockerfile
     restart: unless-stopped
     environment:
       WEB_HOST: 0.0.0.0
       WEB_PORT: "3100"
+      ARTIFACT_INSPECTOR: ${ARTIFACT_INSPECTOR:-on}
       ARTIFACT_STORE: postgres
       DATABASE_URL: postgresql://chatflows_app_login:${CHATFLOWS_APP_DB_PASSWORD:?required}@postgres:5432/chatflows
       DATABASE_POOL_SIZE: "10"
@@ -127,6 +128,7 @@ services:
       P3C_BUSINESS_MCP_URL: ${RUNTIME_MCP_URL:?required}
       QWEN_BASE_URL: ${NEST_LLM_BASE_URL:?required}
       QWEN_GATEWAY_TOKEN: ${NEST_LLM_TOKEN:?required}
+      QWEN_MODEL: ${QWEN_MODEL:-deepseek-v4-flash-0731}
       AGENTLOOP_EXPORTER: ${AGENTLOOP_EXPORTER:-off}
       AGENTLOOP_SAMPLE_RATE: ${AGENTLOOP_SAMPLE_RATE:-1.0}
       AGENTLOOP_PROTOCOL: ${AGENTLOOP_PROTOCOL:-otlp}
@@ -148,14 +150,14 @@ services:
     ports: ["127.0.0.1:${CHATFLOWS_MCP_HOST_PORT:-3100}:3100"]
     networks:
       chatflows:
+        aliases: [code-project]
       agentteams:
-        aliases: [agent-core.chatflows.local]
+        aliases: [agent-core.chatflows.local, code-project, code-project.chatflows.local]
 
   agent-core-bff:
     build:
       context: ../..
-      dockerfile: agent-core/Dockerfile
-      target: runtime
+      dockerfile: deploy/local/agent-core.Dockerfile
     restart: unless-stopped
     command: ["node", "dist/main-web.js"]
     environment:
@@ -164,7 +166,9 @@ services:
       WEB_STATIC_ROOT: /tmp/agent-console-dist
       WEB_AUTH_TOKEN: ${WEB_AUTH_TOKEN:?required}
       WEB_AUTH_CLIENT_CODE: ${WEB_AUTH_CLIENT_CODE:?required}
+      WEB_AUTH_CREDENTIALS: ${WEB_AUTH_CREDENTIALS:-}
       ORCHESTRATION_MODE: ${ORCHESTRATION_MODE:-platform}
+      ARTIFACT_INSPECTOR: ${ARTIFACT_INSPECTOR:-on}
       ARTIFACT_STORE: postgres
       DATABASE_URL: postgresql://chatflows_app_login:${CHATFLOWS_APP_DB_PASSWORD:?required}@postgres:5432/chatflows
       DATABASE_POOL_SIZE: "10"
@@ -187,6 +191,7 @@ services:
       P3C_BUSINESS_MCP_URL: ${RUNTIME_MCP_URL:?required}
       QWEN_BASE_URL: ${NEST_LLM_BASE_URL:?required}
       QWEN_GATEWAY_TOKEN: ${NEST_LLM_TOKEN:?required}
+      QWEN_MODEL: ${QWEN_MODEL:-deepseek-v4-flash-0731}
       LOG_STDERR: ${LOG_STDERR:-on}
       LOG_FILE: "off"
     depends_on:
@@ -198,7 +203,13 @@ services:
       interval: 10s
       timeout: 5s
       retries: 20
-    networks: [chatflows]
+    # 必须进 agentteams：MINIO_ENDPOINT=http://agentteams-controller:9000。
+    # 只挂 chatflows 时 GET /api/v1/pipeline/:id 水合 blob 会 ENOTFOUND，向导闸门就会
+    # 退回 manager 的 DISPATCHED（—），「确认发布」再 409。
+    networks:
+      chatflows:
+        aliases: [code-project-bff]
+      agentteams:
 
   manager-state-init:
     image: chatflows-agentteams-agent-manager:latest
@@ -222,6 +233,10 @@ services:
       AGENTTEAMS_MATRIX_USER_ID: ${AGENTTEAMS_MATRIX_USER_ID:?required}
       AGENTTEAMS_MATRIX_ACCESS_TOKEN: ${AGENTTEAMS_MATRIX_ACCESS_TOKEN:-}
       AGENTTEAMS_MATRIX_PASSWORD: ${AGENTTEAMS_MATRIX_PASSWORD:-}
+      AGENTTEAMS_MATRIX_INVITE_USER_ID: ${AGENTTEAMS_MATRIX_INVITE_USER_ID:-}
+      AGENTTEAMS_MATRIX_INVITE_PASSWORD: ${AGENTTEAMS_MATRIX_INVITE_PASSWORD:-}
+      AGENTTEAMS_E2E_HUMAN_USER_ID: ${AGENTTEAMS_E2E_HUMAN_USER_ID:-}
+      AGENTTEAMS_E2E_HUMAN_PASSWORD: ${AGENTTEAMS_E2E_HUMAN_PASSWORD:-}
       CHATFLOWS_TASK_FS_ENDPOINT: ${CHATFLOWS_TASK_FS_ENDPOINT:?required}
       CHATFLOWS_TASK_FS_ACCESS_KEY: ${CHATFLOWS_TASK_FS_ACCESS_KEY:?required}
       CHATFLOWS_TASK_FS_SECRET_KEY: ${CHATFLOWS_TASK_FS_SECRET_KEY:?required}
@@ -257,7 +272,7 @@ services:
       CHATFLOWS_NEST_URL: http://agent-core:3100
       PIPELINE_CONTROL_TOKEN: ${PIPELINE_CONTROL_TOKEN:?required}
       ORCHESTRATOR_LLM: ${ORCHESTRATOR_LLM:-off}
-      ORCHESTRATOR_MODEL: ${ORCHESTRATOR_MODEL:-dashscope:qwen-plus}
+      ORCHESTRATOR_MODEL: ${ORCHESTRATOR_MODEL:-dashscope:deepseek-v4-flash-0731}
       ORCHESTRATOR_LLM_BASE_URL: ${ORCHESTRATOR_LLM_BASE_URL:-}
       HIGRESS_CONSUMER_TOKEN: ${HIGRESS_CONSUMER_TOKEN:-}
       ORCHESTRATOR_STATE_HOME: /data/orchestrator-state
@@ -285,10 +300,12 @@ services:
     command: ["check"]
     ports: []
 
+  # 改 UI 后不要只 compose up：镜像里是上次 COPY 的 dist。
+  # ./scripts/refresh-agentteams-console.sh
   agent-console:
     build:
-      context: ../../agent-console
-      args: { ORCHESTRATION_MODE: platform }
+      context: ../..
+      dockerfile: deploy/agentteams/agent-console.Dockerfile
     restart: unless-stopped
     depends_on:
       agent-core: { condition: service_started }

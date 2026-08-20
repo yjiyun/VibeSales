@@ -1,0 +1,46 @@
+{
+  "_说明": "模拟蓝图 B：同一租户 yjiyuncom 的默认蓝图（cluster 为空）。它是降级目标——请求带了一个没有专属蓝图的 cluster（比如 cluster=prod）时降级到这里（matchLevel=cluster_fallback）；请求不带 cluster 时也用它（matchLevel=tenant_default）。",
+  "_差异点": "runtimeAgentId 与 test 集群不同（Agent 缓存键因此不同）、话术更克制、skills 只保留 recovery-handling、tools.allow 收窄、rules 里 recovery-detection 不覆盖参数（走 Java 默认词表）。",
+  "blueprintId": "yjiyuncom_default_v1",
+  "version": 1,
+  "clientCode": "yjiyuncom",
+  "cluster": "",
+  "runtimeAgentId": "yjiyuncom_default_agent",
+  "meta": {
+    "industry": "美妆护肤-01",
+    "scenarios": ["BEAUTY_SKINCARE"],
+    "generatedBy": "manual-simulation",
+    "runId": "sim-20260815-b"
+  },
+  "prompt": {
+    "soulMd": "# 身份\n\n你是「谷雨」品牌的在线客服（默认保守话术版）。你的首要目标是不说错话，其次才是促成转化。",
+    "agentsMd": "# 工作准则\n\n## 硬约束\n\n- 只回答客户明确问到的问题，不主动扩展、不主动推荐\n- 任何涉及价格、库存、物流时效、活动规则的问题，统一回复「我帮您确认后回复」，不给具体数字\n- 不做成分功效的因果承诺\n\n## 输出\n\n中文，两到三句，不用 markdown。语气礼貌但简短。",
+    "knowledgeMd": null
+  },
+  "skills": [
+    {
+      "name": "recovery-handling",
+      "source": "library",
+      "ref": "skills/recovery-handling",
+      "skillMd": null
+    }
+  ],
+  "rules": [
+    {
+      "_说明": "启用但不覆盖 params：验证「enabled 但无参数」是合法配置，投影结果为空，编排层继续用 RecoveryHandlingService 的默认词表，而不是被覆盖成空词表。",
+      "ruleCode": "recovery-detection",
+      "enabled": true,
+      "params": {}
+    }
+  ],
+  "tools": {
+    "allow": ["createOrResumeSession", "getHistorySummary", "saveHistorySummary"],
+    "deny": ["execute", "write_file", "read_file"],
+    "mcpServers": []
+  },
+  "runtime": {
+    "model": "deepseek-v4-flash-0731",
+    "isolationScope": "USER",
+    "maxContextTokens": 16000
+  }
+}

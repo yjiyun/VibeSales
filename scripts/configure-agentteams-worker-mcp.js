@@ -62,7 +62,7 @@ gateway=os.environ.get("CHATFLOWS_MCP_BASE_URL","").rstrip("/")
 token=os.environ.get("HIGRESS_CONSUMER_TOKEN","").strip()
 def bind_client():
     if gateway and token:
-        call("PUT",base+path,{"enabled":True,"transport":"streamable_http","url":gateway+"/mcp-servers/"+client+"/mcp","headers":{"Authorization":"Bearer "+token}})
+        call("PUT",base+path,{"enabled":True,"transport":"streamable_http","url":gateway+"/mcp-servers/"+client,"headers":{"Authorization":"Bearer "+token}})
     else:
         call("PUT",base+path,{})
 matrix_base=__import__("os").environ["AGENTTEAMS_MATRIX_URL"].rstrip("/")

@@ -1,0 +1,9 @@
+# 正式项目本地开发忽略项。
+# 主要过滤构建产物、IDE 配置、AgentScope 本地工作目录和私密环境变量文件，
+# 避免把临时文件和敏感配置提交到仓库。
+target/
+.agentscope/
+.env
+.env.*
+.DS_Store
+*.iml

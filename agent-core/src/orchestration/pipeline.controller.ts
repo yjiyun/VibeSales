@@ -34,7 +34,14 @@ export class PipelineController {
  }
 
  @Get(':runId')
- async get(@Headers() headers:Record<string,string|undefined>,@Param('runId') runId:string){this.authorize(headers,['orchestrator','human','admin']);const id=this.required(runId,'runId');return{run:await this.store.getRun(id),artifacts:await this.store.listArtifacts(id)};}
+ async get(@Headers() headers:Record<string,string|undefined>,@Param('runId') runId:string){
+  this.authorize(headers,['orchestrator','human','admin']);
+  const id=this.required(runId,'runId');
+  const run=await this.store.getRun(id);
+  let artifacts:Awaited<ReturnType<ArtifactStoreService['listArtifacts']>>=[];
+  try{artifacts=await this.store.listArtifacts(id);}catch{/* MinIO 暂不可达时仍返回 run.status，向导闸门不能因此卡在 manager DISPATCHED */}
+  return{run,artifacts};
+ }
 
  @Post(':runId/abort')
  async abort(@Headers() headers:Record<string,string|undefined>,@Param('runId') runId:string,@Body() body:Record<string,unknown>){

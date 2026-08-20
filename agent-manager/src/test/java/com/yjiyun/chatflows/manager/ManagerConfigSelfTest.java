@@ -14,6 +14,10 @@ public final class ManagerConfigSelfTest {
   expect(env,"ORCHESTRATOR_LLM","auto", "must be on or off");
   Map<String,String> privateHop=new HashMap<>(env);privateHop.put("ORCHESTRATOR_LLM_BASE_URL","http://agentteams-higress:8080/v1");if(!ManagerConfig.from(privateHop,true).orchestratorLlm())throw new AssertionError("private-network Higress hop was rejected");
   env.put("ORCHESTRATOR_LLM","off");env.remove("HIGRESS_CONSUMER_TOKEN");env.remove("ORCHESTRATOR_LLM_BASE_URL");if(ManagerConfig.from(env,true).orchestratorLlm())throw new AssertionError("explicit off enabled LLM");
+  env.put("AGENTTEAMS_E2E_HUMAN_USER_ID","@manager:local");env.put("AGENTTEAMS_E2E_HUMAN_PASSWORD","human-pass");
+  expect(env,"AGENTTEAMS_E2E_HUMAN_USER_ID","@manager:local","must not be a manager");
+  env.put("AGENTTEAMS_E2E_HUMAN_USER_ID","@admin:local");
+  if(!"@admin:local".equals(ManagerConfig.from(env,true).matrixInviteUserId()))throw new AssertionError("Human invite identity was dropped");
   System.out.println("[PASS] manager LLM mode fails closed unless explicitly off or fully configured for Higress");
  }
  private static void expect(Map<String,String> base,String key,String value,String message){Map<String,String> env=new HashMap<>(base);env.put(key,value);try{ManagerConfig.from(env,true);throw new AssertionError("invalid "+key+" accepted");}catch(IllegalStateException expected){if(!expected.getMessage().contains(message))throw new AssertionError(expected);}}

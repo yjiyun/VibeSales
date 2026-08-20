@@ -4,6 +4,7 @@
  * 只是交互不再把用户赶到编排看板。
  */
 import { computed, ref } from 'vue';
+import MatchPreviewEmbed from './MatchPreviewEmbed.vue';
 
 const props = defineProps({
   phase1: { type: Object, default: null },
@@ -14,6 +15,10 @@ const props = defineProps({
   history: { type: Boolean, default: false },
   rechecking: { type: Boolean, default: false },
   nudging: { type: Boolean, default: false },
+  /** P2 匹配结果，已发布时用同一套「这版会怎么工作」折叠 */
+  preview: { type: Object, default: null },
+  /** 已确认与 Nest 权威状态不符、被 409 拒绝过的 approval_id，不能再靠它点亮按钮 */
+  rejectedApprovalIds: { type: Array, default: () => [] },
 });
 
 const emit = defineEmits(['publish', 'revise', 'chat', 'recheck', 'nudge']);
@@ -44,7 +49,8 @@ const ready = computed(
     !props.error &&
     props.snapshot?.status === 'WAITING_HUMAN' &&
     props.snapshot?.selfcheckOk !== false &&
-    Boolean(props.snapshot?.approvalId),
+    Boolean(props.snapshot?.approvalId) &&
+    !props.rejectedApprovalIds.includes(props.snapshot?.approvalId),
 );
 const failed = computed(() => ['FAILED', 'ABORTED'].includes(props.snapshot?.status));
 const kinds = computed(() => (props.snapshot?.artifacts ?? []).map((item) => item.kind).filter(Boolean));
@@ -64,6 +70,14 @@ const kinds = computed(() => (props.snapshot?.artifacts ?? []).map((item) => ite
         </div>
       </template>
 
+      <MatchPreviewEmbed
+        v-if="published && preview"
+        hide-rerun
+        :preview="preview"
+        history
+      />
+
+      <template v-if="!published">
       <section class="wz-match__sec">
         <h4>需求摘要</h4>
         <dl class="wz-kv">
@@ -89,20 +103,21 @@ const kinds = computed(() => (props.snapshot?.artifacts ?? []).map((item) => ite
           <dd v-if="snapshot.skills?.length">{{ snapshot.skills.join('、') }}</dd>
         </dl>
       </section>
+      </template>
 
       <el-alert
         v-if="ready && !published"
         type="info"
         :closable="false"
         show-icon
-        title="产物已就绪，请确认发布。发布完成后按钮会变为「去试聊」。"
+        title="产物已就绪，请确认发布。发布完成后可进行沙盒试聊。"
       />
       <el-alert
         v-else-if="published"
         type="success"
         :closable="false"
         show-icon
-        title="已发布到 agent-runtime。可以去试聊验收这份产物。"
+        title="已发布。可以开始沙盒试聊，或继续补充细节。"
       />
       <el-alert
         v-else-if="failed || error"
@@ -139,7 +154,10 @@ const kinds = computed(() => (props.snapshot?.artifacts ?? []).map((item) => ite
         >
           {{ publishing ? '发布中，请稍候…' : '确认发布' }}
         </el-button>
-        <el-button v-if="published" type="primary" @click="emit('chat')">去试聊</el-button>
+        <el-button v-if="published" type="primary" @click="emit('chat')">沙盒试聊</el-button>
+        <el-button v-if="published" :disabled="publishing" @click="emit('revise')">
+          继续补充细节
+        </el-button>
         <!-- FAILED/ABORTED 是终态，再复查也不会变，按钮留着只会让人干等 -->
         <el-button
           v-if="!published && !ready && !failed"

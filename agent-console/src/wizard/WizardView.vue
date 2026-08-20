@@ -5,7 +5,7 @@
  * 两栏布局：左对话流 / 右 Tabs（信息收集 · 沙盒试聊 · 产物 · 专家团 · 运行情况）。
  * 「产物」「专家团」受 ARTIFACT_INSPECTOR 双闸控制，生产默认关闭。
  * 向导首页不显示右侧 Tabs；开始会话后才出现。未发布可对话产物时「沙盒试聊」禁用。
- * 对话流是单一时间线（bubble / thinking / question / result），
+ * 对话流是单一时间线（bubble / thinking / question / result / build / publish），
  * 底部常驻 XSender；交互卡片与思考态都在流内，只有一个滚动容器。
  *
  * 前端只做：发请求、按 WizardTurn 渲染、把用户选择回传。
@@ -14,14 +14,16 @@
 
 import { computed, nextTick, onMounted, onUnmounted, ref, watch } from 'vue';
 import { ElMessage, ElMessageBox } from 'element-plus';
+import { DocumentCopy, Download, ArrowDown } from '@element-plus/icons-vue';
 import { wizardApi as api, managerApi, pipelineApi } from '../shared/api';
 import { createBuildRun } from './build-run';
 import { renderMarkdown } from './markdown';
 import { savePublication, loadPublication, isChatReady } from '../shared/publication';
-import { applyApprovalGate, extractApprovalId, fromPipelineGet, mergePlatformSnapshot, publicationFromApprove } from '../shared/run-snapshot';
+import { applyApprovalGate, extractApprovalId, fromPipelineGet, mergePlatformSnapshot, publicationFromApprove, publicationFromSnapshot } from '../shared/run-snapshot';
+import { deriveBuildSteps, emptyBuildProgress, leaderBlockedMessage } from '../shared/build-progress';
 import QuestionCard from './components/QuestionCard.vue';
 import ResultCard from './components/ResultCard.vue';
-import MatchCard from './components/MatchCard.vue';
+import BuildProgressCard from './components/BuildProgressCard.vue';
 import PublishCard from './components/PublishCard.vue';
 import RuntimePanel from './components/RuntimePanel.vue';
 import CollectPanel from './components/CollectPanel.vue';
@@ -50,10 +52,11 @@ const sessionId = ref('');
 const stage = ref('');
 const status = ref('');
 /**
- * 统一时间线：bubble | thinking | question | result | match | publish
- * `match` 是 P2 结果（§8.6）：进时间线后就自动复用 history 降级机制，
- * 不再需要在收口处手工清空全局预览态。
- * `publish` 是生成进度 + 确认发布（v5：Human Gate 留在向导内）。
+ * 统一时间线：bubble | thinking | question | result | build | publish | divider
+ * `result` 内嵌 P2 匹配（§8.6 灰底折叠），不再单独占一格。
+ * `build` 是「构建智能体」过程卡（P3C/P4 步骤）。
+ * `publish` 是确认发布（v5：Human Gate 留在向导内）。
+ * `divider` 标出「生成总结」这一轮向导发言的起点。
  */
 const timeline = ref([]);
 const question = ref(null);
@@ -67,6 +70,7 @@ const buildLoading = ref(false);
 const orchestrationRun = ref(null);
 const lastRunId = ref(localStorage.getItem('agent-console.last-run-id') || '');
 const publishState = ref(null);
+const buildState = ref(null);
 const gateRechecking = ref(false);
 const nudging = ref(false);
 /** 确认发布会打 dry-run，platform 真模型可能要等很久；独立 ref，避免复查闸门把 loading 冲掉。 */
@@ -91,6 +95,8 @@ const rightTab = ref('collect');
 const sandboxPublication = ref(loadPublication());
 const sandboxReady = computed(() => isChatReady(sandboxPublication.value));
 const showInspector = computed(() => inspectorVisible(health.value));
+// 「AI」角标只在 Vite 开发模式出现；当前产品态隐藏，保留开关便于再打开。
+// const isDev = import.meta.env.DEV;
 watch(sandboxReady, (ok) => {
   if (!ok && rightTab.value === 'sandbox') rightTab.value = 'collect';
 });
@@ -102,10 +108,14 @@ watch(showInspector, (on) => {
 
 const streamRef = ref(null);
 const senderRef = ref(null);
+/** 聊天区滚离底部时，在输入框上方显示「回到底部」 */
+const showJumpBottom = ref(false);
+const STREAM_NEAR_BOTTOM = 80;
 /** 思考态秒表 */
 const thinkingStartedAt = ref(0);
 const thinkingSecs = ref(0);
 let thinkingTimer = null;
+let buildTimer = null;
 
 const started = computed(() => !!sessionId.value);
 const tenants = wizardTenants();
@@ -120,6 +130,7 @@ const selectedTenant = ref(
 function tenantLabel(code) {
   if (code === 'acme_beauty') return '谷雨 · acme_beauty';
   if (code === 'acme_agri') return '极飞 · acme_agri';
+  if (code === 'acme_edu') return '教育 · acme_edu';
   return code;
 }
 
@@ -175,7 +186,7 @@ function restoreSession() {
   sessionId.value = saved.sessionId;
   stage.value = saved.stage || '';
   status.value = saved.status || '';
-  timeline.value = saved.timeline || [];
+  timeline.value = attachLegacyMatchCards(saved.timeline || []);
   question.value = saved.question || null;
   result.value = saved.result || null;
   collect.value = saved.collect || null;
@@ -196,7 +207,13 @@ function restoreSession() {
   ElMessage.info('已恢复上次的对话');
   // 恢复出来的 run 可能在这期间已经推进到发布闸门，顺手复查一次，
   // 免得用户看着一条「仍在生成」的旧卡片却不知道其实已经可以发布了。
-  if (saved.runId && !saved.published) recheckPublishGate().catch(() => {});
+  if (saved.runId && !saved.published) {
+    ensureBuildCard();
+    const live = liveBuildItem();
+    startBuildTimer(live?.startedAt);
+    refreshBuildProgress(saved.runId).catch(() => {});
+    recheckPublishGate().catch(() => {});
+  }
 }
 
 /** 会话态一变就落盘：只存重建界面必需的数据，thinking 等瞬时态不落盘。 */
@@ -224,7 +241,10 @@ watch(
   { deep: true },
 );
 
-onUnmounted(() => stopThinkingTimer());
+onUnmounted(() => {
+  stopThinkingTimer();
+  stopBuildTimer();
+});
 
 function stopThinkingTimer() {
   if (thinkingTimer) {
@@ -256,17 +276,44 @@ function applyTurn(turn) {
   // 拿掉上一轮 thinking
   timeline.value = timeline.value.filter((t) => t.type !== 'thinking');
 
-  for (const m of turn.messages ?? []) {
+  const msgs = turn.messages ?? [];
+  const isSummaryTurn = msgs.some((m) => m.kind === 'summary');
+  let summaryDividerPlaced = false;
+  const thinkSecs = Math.max(
+    thinkingSecs.value,
+    Math.round((turn.runtime?.took_ms ?? 0) / 1000),
+  );
+
+  for (const m of msgs) {
+    if (isSummaryTurn && !summaryDividerPlaced && m.kind !== 'notice') {
+      timeline.value.push({
+        id: `div-summary-${turn.session_id}-${Date.now()}`,
+        type: 'divider',
+      });
+      summaryDividerPlaced = true;
+    }
+    const handoffSpeech = looksLikePreviewHandoff(m.content);
+    if (m.kind === 'notice' && !handoffSpeech) {
+      timeline.value.push({
+        id: m.id,
+        type: 'notice',
+        html: renderMarkdown(m.content),
+        kind: 'notice',
+      });
+      continue;
+    }
     timeline.value.push({
       id: m.id,
       type: 'bubble',
       role: 'assistant',
       placement: 'start',
-      variant: m.kind === 'notice' ? 'outlined' : 'filled',
+      variant: 'filled',
       shape: 'corner',
       html: renderMarkdown(m.content),
-      kind: m.kind,
+      kind: handoffSpeech ? 'speech' : m.kind,
       byLlm: !!m.by_llm,
+      markdown: m.kind === 'summary' ? m.content : undefined,
+      thinkSecs: m.kind === 'summary' ? thinkSecs : undefined,
     });
   }
 
@@ -288,61 +335,170 @@ function applyTurn(turn) {
   // 注意 DONE 之后的每一回合都仍带着上一版 session.result（改写中途也有值），
   // 因此只有 status=done 这一回合才算「又收口了一次」，否则只原地更新。
   const resultCards = timeline.value.filter((t) => t.type === 'result');
+  let attachedPreview = false;
   if (turn.result) {
     const tail = timeline.value[timeline.value.length - 1]?.type;
-    const tailIsCard = tail === 'result' || tail === 'match';
-    if (turn.status === 'done' && !tailIsCard) {
-      // 重新收口：旧的 P1 结果卡与 P2 匹配卡一起降级为历史，新卡进流末尾
+    const tailIsResult = tail === 'result';
+    if (turn.status === 'done' && !tailIsResult) {
+      // 重新收口：旧的 P1 结果卡（含内嵌 P2）降级为历史，新卡进流末尾
       for (const item of resultCards) item.history = true;
-      markMatchHistory();
       timeline.value.push({
         id: `result-${turn.session_id}-${Date.now()}`,
         type: 'result',
         result: turn.result,
+        preview: turn.preview ?? null,
         history: false,
       });
+      attachedPreview = !!turn.preview;
     } else if (resultCards.length) {
-      resultCards[resultCards.length - 1].result = turn.result;
+      const host = resultCards[resultCards.length - 1];
+      host.result = turn.result;
+      if (turn.preview) {
+        host.preview = turn.preview;
+        attachedPreview = true;
+      }
     } else {
       timeline.value.push({
         id: `result-${turn.session_id}-${Date.now()}`,
         type: 'result',
         result: turn.result,
+        preview: turn.preview ?? null,
         history: false,
       });
+      attachedPreview = !!turn.preview;
     }
   }
 
-  // P2 产物：CTA 直串时随回合一起到（§8.7），推成时间线独立一格
-  if (turn.preview) pushMatchCard(turn.preview, turn.session_id);
+  // P2 产物：CTA 直串时随回合一起到（§8.7），写到当前结果卡里
+  if (turn.preview && !attachedPreview) attachPreview(turn.preview);
 
   runtime.value = turn.runtime;
   runtimeHistory.value.push(turn.runtime);
   scrollToBottom(true);
 }
 
-/** 已有的 P2 匹配卡降级为历史留痕（跟 question / result 卡同一套机制） */
-function markMatchHistory() {
-  for (const item of timeline.value) {
-    if (item.type === 'match') item.history = true;
+function formatThinkSecs(secs) {
+  const n = Math.max(0, Math.round(Number(secs) || 0));
+  if (n < 60) return `${n}秒`;
+  const m = Math.floor(n / 60);
+  const s = n % 60;
+  return s ? `${m}分${s}秒` : `${m}分`;
+}
+
+function summaryText(item) {
+  const md = String(item?.markdown ?? '').trim();
+  if (md) return md;
+  const html = String(item?.html ?? '');
+  if (!html || typeof document === 'undefined') return '';
+  const box = document.createElement('div');
+  box.innerHTML = html;
+  return (box.innerText || box.textContent || '').trim();
+}
+
+async function writeClipboard(text) {
+  if (navigator.clipboard?.writeText) {
+    try {
+      await navigator.clipboard.writeText(text);
+      return true;
+    } catch {
+      /* 非安全上下文（http://内网 IP）会拒绝 Clipboard API */
+    }
+  }
+  const ta = document.createElement('textarea');
+  ta.value = text;
+  ta.setAttribute('readonly', '');
+  ta.style.position = 'fixed';
+  ta.style.left = '-9999px';
+  document.body.appendChild(ta);
+  ta.select();
+  try {
+    return document.execCommand('copy');
+  } finally {
+    document.body.removeChild(ta);
   }
 }
 
-/** P2 结果推进时间线：旧卡留痕，新卡进流末尾 */
-function pushMatchCard(preview, sessionId_) {
-  markMatchHistory();
-  timeline.value.push({
-    id: `match-${sessionId_}-${Date.now()}`,
-    type: 'match',
-    preview,
-    history: false,
-  });
+async function copySummary(item) {
+  const text = summaryText(item);
+  if (!text) {
+    ElMessage.warning('没有可复制的内容');
+    return;
+  }
+  const ok = await writeClipboard(text);
+  if (ok) ElMessage.success('已复制总结');
+  else ElMessage.error('复制失败');
 }
 
-/** 时间线末尾是否已经有一张当前有效的 P2 匹配卡（决定按钮文案） */
-const hasLiveMatch = computed(() =>
-  timeline.value.some((t) => t.type === 'match' && !t.history),
-);
+function exportSummary(item) {
+  const text = summaryText(item);
+  if (!text) {
+    ElMessage.warning('没有可导出的内容');
+    return;
+  }
+  const blob = new Blob([`${text}\n`], { type: 'text/markdown;charset=utf-8' });
+  const url = URL.createObjectURL(blob);
+  const link = document.createElement('a');
+  link.href = url;
+  link.download = `wizard-summary-${sessionId.value || 'draft'}.md`;
+  document.body.appendChild(link);
+  link.click();
+  link.remove();
+  URL.revokeObjectURL(url);
+  ElMessage.success('已导出 Markdown');
+}
+
+/** 当前有效的 P1 结果卡（内嵌 P2 写在这张上） */
+function liveResultItem() {
+  return [...timeline.value].reverse().find((row) => row.type === 'result' && !row.history) ?? null;
+}
+
+function liveBuildItem() {
+  return [...timeline.value].reverse().find((row) => row.type === 'build' && !row.history) ?? null;
+}
+
+function stampBuildElapsed(secs, startedAt) {
+  if (buildState.value) {
+    buildState.value.elapsedSecs = secs;
+    if (startedAt) buildState.value.startedAt = startedAt;
+  }
+  const live = liveBuildItem();
+  if (live) {
+    live.elapsedSecs = secs;
+    if (startedAt) live.startedAt = startedAt;
+  }
+}
+
+function stopBuildTimer() {
+  if (buildTimer) {
+    clearInterval(buildTimer);
+    buildTimer = null;
+  }
+}
+
+function startBuildTimer(fromMs) {
+  stopBuildTimer();
+  const startedAt = Number(fromMs) || Date.now();
+  const tick = () => {
+    stampBuildElapsed(Math.max(0, Math.floor((Date.now() - startedAt) / 1000)), startedAt);
+  };
+  tick();
+  buildTimer = setInterval(tick, 1000);
+}
+
+function maybeStopBuildTimer(snapshot, blocked) {
+  if (blocked || ['WAITING_HUMAN', 'SUCCEEDED', 'FAILED', 'ABORTED'].includes(snapshot?.status)) {
+    stopBuildTimer();
+  }
+}
+
+/** 把 P2 结果写进当前结果卡，不再独占时间线一格 */
+function attachPreview(preview) {
+  const host = liveResultItem();
+  if (host) host.preview = preview;
+}
+
+/** 时间线末尾那张结果卡是否已经有 P2（决定「先看看效果」是否还出现） */
+const hasLiveMatch = computed(() => !!liveResultItem()?.preview);
 
 /** 把用户的选择也显示成一条气泡（服务端只回助手侧消息） */
 function pushUserBubble(label) {
@@ -375,14 +531,37 @@ function clearThinking() {
   timeline.value = timeline.value.filter((t) => t.type !== 'thinking');
 }
 
+function streamAwayFromBottom(el) {
+  return el.scrollHeight - el.scrollTop - el.clientHeight;
+}
+
+function syncJumpBottom() {
+  const el = streamRef.value;
+  if (!el) {
+    showJumpBottom.value = false;
+    return;
+  }
+  showJumpBottom.value = streamAwayFromBottom(el) > STREAM_NEAR_BOTTOM;
+}
+
+function onStreamScroll() {
+  syncJumpBottom();
+}
+
+function jumpToBottom() {
+  scrollToBottom(true);
+}
+
 function scrollToBottom(force = false) {
   nextTick(() => {
     const el = streamRef.value;
     if (!el) return;
-    const nearBottom =
-      el.scrollHeight - el.scrollTop - el.clientHeight < 80;
+    const nearBottom = streamAwayFromBottom(el) < STREAM_NEAR_BOTTOM;
     if (force || nearBottom) {
       el.scrollTop = el.scrollHeight;
+      showJumpBottom.value = false;
+    } else {
+      showJumpBottom.value = true;
     }
   });
 }
@@ -508,11 +687,11 @@ async function useTemplate(payload) {
 async function runPreview() {
   if (!sessionId.value || previewLoading.value) return;
   previewLoading.value = true;
-  pushThinking('正在按你的信息匹配可用方案…');
+  pushThinking('正在匹配方案并调动专家团…');
   try {
     const turn = await api.preview(sessionId.value);
     clearThinking();
-    pushMatchCard(turn.result, turn.session_id);
+    attachPreview(turn.result);
     runtime.value = turn.runtime;
     runtimeHistory.value.push(turn.runtime);
     scrollToBottom(true);
@@ -530,13 +709,19 @@ async function loadRunSnapshot(runId) {
   // 否则 Nest 已 WAITING_HUMAN 而向导还在转圈。Nest 读失败时退回 manager，不让轮询中断。
   const managerData = await managerApi.get(runId);
   let pipelineData = null;
+  let nestUnreachable = '';
   try {
     pipelineData = await pipelineApi.get(runId);
-  } catch {
-    /* Nest 暂时读不到就先用 manager 的视图，下一轮再试 */
+  } catch (err) {
+    nestUnreachable = err?.message || String(err);
   }
   let snapshot = mergePlatformSnapshot(managerData, pipelineData);
+  if (nestUnreachable) snapshot = { ...snapshot, nestUnreachable };
   if (snapshot.approvalId && snapshot.status === 'WAITING_HUMAN') return snapshot;
+  // Team Room 聊天文本（Leader 的口头汇报）只当作「可能到闸门了」的线索去加速下一轮轮询，
+  // 不直接采信当真——Leader 曾在 Nest 真正进入 WAITING_HUMAN 之前就编出这句话（run
+  // aef1e08b，approval_id 本身也是假的）。真正的 approvalId/status 只认 Nest/manager
+  // 下一次真实返回的值，applyApprovalGate 只标注 approvalGuess，不改 snapshot.status。
   try {
     snapshot = applyApprovalGate(snapshot, extractApprovalId((await managerApi.room(runId)).messages, runId));
   } catch {
@@ -550,33 +735,138 @@ function updateThinkingLabel(label) {
   if (item) item.label = label;
 }
 
-function isLeaderFailureBody(body) {
-  const text = String(body ?? '').trim();
-  if (!text || /NEW_RUN/.test(text)) return false;
-  return /^Internal error$/i.test(text) || /^RUN_BLOCKED\b/i.test(text);
+/** 旧会话把 P2 做成独立 match 格：折进最近一张结果卡，避免刷新后丢匹配。 */
+function attachLegacyMatchCards(items) {
+  const next = [];
+  for (const item of items ?? []) {
+    if (item?.type !== 'match') {
+      next.push(item);
+      continue;
+    }
+    const host =
+      [...next].reverse().find((row) => row.type === 'result' && !!row.history === !!item.history) ||
+      [...next].reverse().find((row) => row.type === 'result');
+    if (host && !host.preview) host.preview = item.preview;
+  }
+  for (const item of next) {
+    if (item.type !== 'publish' || item.preview) continue;
+    const host =
+      [...next].reverse().find((row) => row.type === 'result' && row.preview) ||
+      next.find((row) => row.type === 'result' && row.preview);
+    if (host) item.preview = host.preview;
+  }
+  return next.map(promotePreviewHandoffBubble);
 }
 
-function leaderBlockedMessage(room) {
-  const msgs = room?.messages ?? [];
-  for (let i = 0; i < msgs.length; i += 1) {
-    const body = String(msgs[i]?.body ?? '');
-    if (msgs[i]?.for_run && isLeaderFailureBody(body)) return body;
-    if (msgs[i]?.for_run && /NEW_RUN/.test(body) && isLeaderFailureBody(msgs[i + 1]?.body)) {
-      return String(msgs[i + 1].body).trim();
+/** 匹配过渡话术是向导回复，旧会话误存成 notice。 */
+function looksLikePreviewHandoff(text) {
+  return /匹配(可用)?方案/.test(String(text ?? ''));
+}
+
+function promotePreviewHandoffBubble(item) {
+  if (!item || (item.type !== 'notice' && item.kind !== 'notice')) return item;
+  const text = `${item.markdown ?? ''} ${item.html ?? ''}`;
+  if (!looksLikePreviewHandoff(text)) return item;
+  return {
+    ...item,
+    type: 'bubble',
+    role: 'assistant',
+    placement: 'start',
+    variant: 'filled',
+    shape: 'corner',
+    kind: 'speech',
+  };
+}
+
+function ensureBuildCard() {
+  if (timeline.value.some((row) => row.type === 'build' && !row.history)) return;
+  const item = { id: `build-restore-${Date.now()}`, type: 'build', history: false };
+  const idx = timeline.value.findIndex((row) => row.type === 'publish' && !row.history);
+  if (idx >= 0) timeline.value.splice(idx, 0, item);
+  else timeline.value.push(item);
+}
+
+function pushBuildCard() {
+  for (const item of timeline.value) {
+    if (item.type === 'build' && !item.history) {
+      item.history = true;
+      item.progress = buildState.value?.progress ?? item.progress;
+      item.error = buildState.value?.error ?? item.error;
+      item.elapsedSecs = buildState.value?.elapsedSecs ?? item.elapsedSecs;
+      item.startedAt = buildState.value?.startedAt ?? item.startedAt;
+    }
+    if (item.type === 'publish') item.history = true;
+  }
+  const startedAt = Date.now();
+  timeline.value.push({
+    id: `build-${Date.now()}`,
+    type: 'build',
+    history: false,
+    startedAt,
+    elapsedSecs: 0,
+  });
+}
+
+function openExpertRoom() {
+  showRuntime.value = true;
+  rightTab.value = 'expert-room';
+}
+
+async function refreshBuildProgress(runId) {
+  let room = { messages: [] };
+  if (orchestrationMode === 'platform') {
+    try {
+      room = await managerApi.room(runId);
+    } catch {
+      /* Room 读失败不阻断过程卡 */
     }
   }
-  return '';
+  const snapshot = await loadRunSnapshot(runId);
+  const progress = deriveBuildSteps({
+    artifacts: snapshot.artifacts,
+    status: snapshot.status,
+    phase: snapshot.phase,
+    mode: orchestrationMode,
+    roomMessages: room.messages ?? [],
+  });
+  const blocked = leaderBlockedMessage(room);
+  const error = blocked ? `Team Leader 没有继续编排：${blocked.slice(0, 120)}` : '';
+  buildState.value = {
+    runId,
+    snapshot,
+    progress,
+    error,
+    elapsedSecs: buildState.value?.elapsedSecs ?? liveBuildItem()?.elapsedSecs ?? 0,
+    startedAt: buildState.value?.startedAt ?? liveBuildItem()?.startedAt,
+  };
+  const live = liveBuildItem();
+  if (live) {
+    live.progress = progress;
+    live.error = error;
+  }
+  maybeStopBuildTimer(snapshot, blocked);
+  return { snapshot, blocked, progress };
 }
 
 // platform 编排要等 Leader 逐棒派活 + 真模型跑完 P3C 五步（Guidance、四专家、compose、
 // selfcheck、persist）再到 P4 pending_approval，实测 15–25 分钟；原来 240×2s=8 分钟远远
 // 不够，超时后又直接抛错、publishState 不落地，于是 run 明明已到 WAITING_HUMAN 却再也点
 // 不到「确认发布」。这里给足 30 分钟，并把超时改成可恢复（见下方 timedOut 分支）。
+function syncPublicationFromSnapshot(snapshot) {
+  if (snapshot?.status !== 'SUCCEEDED') return;
+  const publication = publicationFromSnapshot(snapshot);
+  if (!publication.clientCode || !publication.runtimeAgentId) return;
+  savePublication(publication);
+  sandboxPublication.value = loadPublication();
+}
+
 function rememberPublishSnapshot(snapshot) {
   const published = snapshot.status === 'SUCCEEDED';
+  if (published) syncPublicationFromSnapshot(snapshot);
   if (!publishState.value) {
     publishState.value = { snapshot, published, publishing: false, error: '' };
-    pushPublishCard();
+    const live = timeline.value.some((row) => row.type === 'publish' && !row.history);
+    if (!live) pushPublishCard();
     return;
   }
   publishState.value.snapshot = snapshot;
@@ -587,38 +877,33 @@ async function waitForPublishGate(runId) {
   const attempts = orchestrationMode === 'platform' ? 900 : 60;
   const delayMs = orchestrationMode === 'platform' ? 2000 : 1500;
   for (let attempt = 0; attempt < attempts; attempt += 1) {
-    const snapshot = await loadRunSnapshot(runId);
-    rememberPublishSnapshot(snapshot);
-    updateThinkingLabel(
-      snapshot.status === 'WAITING_HUMAN'
-        ? '已生成，等待确认发布'
-        : `正在按你的需求生成智能体（${snapshot.status || '…'}）`,
-    );
-    if (['WAITING_HUMAN', 'SUCCEEDED', 'FAILED', 'ABORTED'].includes(snapshot.status)) return snapshot;
-    if (orchestrationMode === 'platform' && attempt >= 2 && attempt % 3 === 0) {
-      try {
-        const blocked = leaderBlockedMessage(await managerApi.room(runId));
-        // 落进 publishState 而不是 throw：throw 会跳过下面的 rememberPublishSnapshot，
-        // 卡片压根不会出现，用户只看到一闪而过的 toast，摸不到「重试」按钮。很多
-        // RUN_BLOCKED（driver_not_found 等 MCP 连接类）几秒后就自愈，值得让用户在
-        // 卡片上直接点「重试」，不必去 Team Room 手敲消息。
-        if (blocked) {
-          rememberPublishSnapshot(snapshot);
-          if (publishState.value) {
-            publishState.value.error = `Team Leader 没有继续编排：${blocked.slice(0, 120)}`;
-          }
-          return snapshot;
-        }
-      } catch {
-        /* Room 读失败不阻断轮询，下一轮再试 */
-      }
+    const { snapshot, blocked } = await refreshBuildProgress(runId);
+    if (['WAITING_HUMAN', 'SUCCEEDED', 'FAILED', 'ABORTED'].includes(snapshot.status)) {
+      rememberPublishSnapshot(snapshot);
+      return snapshot;
     }
-    await new Promise((resolve) => setTimeout(resolve, delayMs));
+    // 落进 publishState 而不是 throw：throw 会跳过下面的 rememberPublishSnapshot，
+    // 卡片压根不会出现，用户只看到一闪而过的 toast，摸不到「重试」按钮。很多
+    // RUN_BLOCKED（driver_not_found 等 MCP 连接类）几秒后就自愈，值得让用户在
+    // 卡片上直接点「重试」，不必去 Team Room 手敲消息。
+    if (blocked) {
+      rememberPublishSnapshot(snapshot);
+      if (publishState.value) {
+        publishState.value.error = `Team Leader 没有继续编排：${blocked.slice(0, 120)}`;
+      }
+      return snapshot;
+    }
+    // approvalGuess 是 Leader 口头汇报的线索，不采信为真，但值得更快去问一次权威源，
+    // 免得用户在「Leader 已经喊了 APPROVAL_REQUIRED」和「按钮还没点亮」之间多等一轮。
+    await new Promise((resolve) => setTimeout(resolve, snapshot.approvalGuess ? Math.min(delayMs, 500) : delayMs));
   }
   // 不抛错：把最后一次快照带 timedOut 交回去，startBuild 会照常落 publishState。
   // 这样即使编排比预期更慢，用户仍能用「检查发布闸门」按钮复查，run 一旦到
   // WAITING_HUMAN 就能立刻点「确认发布」，不必重跑整条流水线。
-  return { ...(await loadRunSnapshot(runId)), timedOut: true };
+  const last = await refreshBuildProgress(runId);
+  const snapshot = { ...last.snapshot, timedOut: true };
+  rememberPublishSnapshot(snapshot);
+  return snapshot;
 }
 
 /** 超时/刷新后手动复查闸门：run 到 WAITING_HUMAN 就补出「确认发布」卡片。 */
@@ -627,19 +912,25 @@ async function recheckPublishGate() {
   if (!runId || gateRechecking.value || publishing.value) return;
   gateRechecking.value = true;
   try {
-    const snapshot = await loadRunSnapshot(runId);
+    ensureBuildCard();
+    const { snapshot } = await refreshBuildProgress(runId);
     publishState.value = {
       snapshot,
       published: snapshot.status === 'SUCCEEDED',
       publishing: false,
-      error: '',
+      error: buildState.value?.error || '',
     };
+    if (snapshot.status === 'SUCCEEDED') syncPublicationFromSnapshot(snapshot);
     if (['WAITING_HUMAN', 'SUCCEEDED'].includes(snapshot.status)) {
       // 恢复会话时 timeline 里可能已带着上次那张 publish 卡，别再追加一张
-      const tail = timeline.value.at(-1);
-      if (!(tail?.type === 'publish' && !tail.history)) pushPublishCard();
+      const live = timeline.value.some((row) => row.type === 'publish' && !row.history);
+      if (!live) pushPublishCard();
       scrollToBottom(true);
-      ElMessage.success(snapshot.status === 'WAITING_HUMAN' ? '闸门已就绪，请确认后发布' : '已发布');
+      ElMessage.success(snapshot.status === 'WAITING_HUMAN' ? '闸门已就绪，请确认后发布' : '已发布，可以开始沙盒试聊');
+    } else if (snapshot.nestUnreachable) {
+      ElMessage.warning(
+        `Nest 快照读失败（${snapshot.nestUnreachable}），manager 仍是 ${snapshot.status || '进行中'}。闸门以 Nest 为准，修好后再查。`,
+      );
     } else if (['FAILED', 'ABORTED'].includes(snapshot.status)) {
       // 终态：复查再多次也不会变，别用「稍后再查」误导用户干等
       ElMessage.error(
@@ -668,6 +959,7 @@ async function nudgeRun() {
   try {
     await managerApi.nudge(runId);
     if (publishState.value) publishState.value.error = '';
+    if (buildState.value) buildState.value.error = '';
     ElMessage.success('已提醒 Team Leader 重试，稍后点「检查发布闸门」查看进展');
   } catch (err) {
     ElMessage.error(`重试提醒失败：${err.message || err}`);
@@ -684,6 +976,7 @@ function pushPublishCard() {
     id: `publish-${publishState.value?.snapshot?.runId || Date.now()}`,
     type: 'publish',
     history: false,
+    preview: liveResultItem()?.preview ?? null,
   });
 }
 
@@ -738,6 +1031,8 @@ async function settlePreviousRun() {
     ElMessage.warning(`终止上一个 run 失败：${err.message || err}。继续新建，但请留意 Room 里是否有交叉 run。`);
   }
   publishState.value = null;
+  buildState.value = null;
+  stopBuildTimer();
   clearLastRun();
   return true;
 }
@@ -747,16 +1042,25 @@ async function startBuild() {
   if (!result.value || result.value.gate !== 'PASS' || buildLoading.value) return;
   if (!(await settlePreviousRun())) return;
   buildLoading.value = true;
-  pushThinking('正在按你的需求生成智能体…');
+  buildState.value = {
+    runId: '',
+    snapshot: null,
+    progress: emptyBuildProgress(orchestrationMode),
+    error: '',
+    elapsedSecs: 0,
+    startedAt: Date.now(),
+  };
+  pushBuildCard();
+  startBuildTimer(liveBuildItem()?.startedAt);
+  scrollToBottom(true);
   try {
     const phase1 = result.value;
     orchestrationRun.value = await createBuildRun(phase1, orchestrationMode, { managerApi, pipelineApi });
     lastRunId.value = orchestrationRun.value.run_id || '';
     localStorage.setItem('agent-console.last-run-id', orchestrationRun.value.run_id);
     localStorage.setItem('agent-console.last-run-mode', orchestrationMode);
+    await refreshBuildProgress(orchestrationRun.value.run_id);
     const snapshot = await waitForPublishGate(orchestrationRun.value.run_id);
-    rememberPublishSnapshot(snapshot);
-    clearThinking();
     scrollToBottom(true);
     if (snapshot.timedOut) {
       ElMessage.warning(
@@ -771,22 +1075,46 @@ async function startBuild() {
       );
     }
   } catch (err) {
-    clearThinking();
+    stopBuildTimer();
+    if (buildState.value) buildState.value.error = err.message || String(err);
     ElMessage.error(err.message);
   } finally {
     buildLoading.value = false;
   }
 }
 
+/** approval_id 与 Nest/manager 真实审批状态不符时的报错，是「Leader 汇报与权威状态不一致」
+ *  的典型指纹（曾实测发生：run aef1e08b，approval_id 本身也是 Leader 编的）。命中这些报错时，
+ *  这个 approval_id 应视为永久失效，本次会话内不再靠它点亮发布按钮，避免反复撞同一个 409。 */
+function isApprovalMismatchError(message) {
+  return /run is not waiting for P4 approval|approval request is missing or already decided|approval credential mismatch or already consumed|P4 approval cannot be reopened/i.test(
+    String(message ?? ''),
+  );
+}
+
+function pushFailureNotice(text) {
+  timeline.value.push({
+    id: `notice-publish-failed-${Date.now()}`,
+    type: 'notice',
+    kind: 'notice',
+    html: renderMarkdown(text),
+  });
+}
+
 async function confirmPublish() {
   const state = publishState.value;
   if (!state?.snapshot?.approvalId || publishing.value || state.published) return;
+  const submittedApprovalId = state.snapshot.approvalId;
+  if ((state.rejectedApprovalIds ?? []).includes(submittedApprovalId)) {
+    ElMessage.warning('这个 approval_id 已经被拒绝过一次，请先点「检查发布闸门」核对最新状态');
+    return;
+  }
   publishing.value = true;
   state.publishing = true;
   state.error = '';
   await nextTick();
   try {
-    const body = { approval_id: state.snapshot.approvalId, approved: true };
+    const body = { approval_id: submittedApprovalId, approved: true };
     const decided =
       orchestrationMode === 'platform'
         ? await managerApi.approve(state.snapshot.runId, body)
@@ -804,23 +1132,45 @@ async function confirmPublish() {
     savePublication(publicationFromApprove(decided, snapshot));
     sandboxPublication.value = loadPublication();
     if (state.published) {
-      ElMessage.success('已发布，可以去试聊');
+      ElMessage.success('已发布，可以开始沙盒试聊');
       if (isChatReady(sandboxPublication.value)) goChat();
     } else if (['FAILED', 'ABORTED'].includes(snapshot.status)) {
       state.error = `发布未完成：${snapshot.status}`;
       ElMessage.error(state.error);
+      pushFailureNotice(`⚠️ 发布未完成：run \`${snapshot.runId?.slice(0, 8) || ''}\` 已 ${snapshot.status}，不会再推进。`);
+      scrollToBottom(true);
     } else {
       ElMessage.success('已提交发布，导入还在进行，稍后点「检查发布闸门」');
     }
     scrollToBottom(true);
   } catch (err) {
+    const message = err.message || String(err);
+    const mismatch = isApprovalMismatchError(message);
     try {
       state.snapshot = await loadRunSnapshot(state.snapshot.runId);
     } catch {
       /* keep the gate snapshot so the card can still show FAILED after reload */
     }
-    state.error = err.message || String(err);
+    if (mismatch) {
+      state.rejectedApprovalIds = [...(state.rejectedApprovalIds ?? []), submittedApprovalId];
+      if (state.snapshot?.status === 'SUCCEEDED') {
+        state.published = true;
+        state.error = '';
+        syncPublicationFromSnapshot(state.snapshot);
+        ElMessage.success('该 run 已经发布完成，无需再点确认发布');
+        if (isChatReady(sandboxPublication.value)) goChat();
+        return;
+      }
+    }
+    state.error = message;
     ElMessage.error(state.error);
+    // 不能让 409 悄悄消失在一条几秒后就消失的 toast 里：留痕到时间线，刷新页面后仍可见。
+    pushFailureNotice(
+      mismatch
+        ? `⚠️ 确认发布失败：${message}\n\nTeam Leader 汇报的审批状态与 Nest 实际状态不一致，请点「检查发布闸门」重新核对，不要重复点击确认发布。`
+        : `⚠️ 确认发布失败：${message}`,
+    );
+    scrollToBottom(true);
   } finally {
     publishing.value = false;
     if (publishState.value) publishState.value.publishing = false;
@@ -878,6 +1228,8 @@ async function restart() {
   runtimeHistory.value = [];
   orchestrationRun.value = null;
   publishState.value = null;
+  buildState.value = null;
+  stopBuildTimer();
   clearLastRun();
   // 显式重开会话时也要丢掉缓存，否则下次刷新又被恢复成这条已废弃的对话
   clearSession();
@@ -938,7 +1290,7 @@ async function restart() {
 
     <div class="wz-body">
       <main class="wz-chat">
-        <!-- 未开始：租户由已校验凭证绑定，不接受页面输入 -->
+        <!-- 未开始：欢迎页 -->
         <div v-if="!started" class="wz-stream">
           <div class="wz-start">
             <Welcome
@@ -948,7 +1300,7 @@ async function restart() {
               description="我会先问几个问题（行业、想让 AI 先干什么、业务简述），再整理成总结并匹配行业最佳实践。开始后可在右侧查看信息收集和生成进度；发布后可切到沙盒试聊。"
             />
             <div class="wz-start__form">
-              <div v-if="tenants.length > 1" class="wz-start__row">
+              <div v-if="tenants.length" class="wz-start__row">
                 <label>账号</label>
                 <el-select
                   v-model="selectedTenant"
@@ -998,45 +1350,95 @@ async function restart() {
 
         <!-- 会话进行中：单一时间线 + 常驻输入 -->
         <template v-else>
-          <div ref="streamRef" class="wz-stream">
+          <div ref="streamRef" class="wz-stream" @scroll="onStreamScroll">
             <div
               v-for="item in timeline"
               :key="item.id"
               class="wz-timeline-item"
-              :class="`is-${item.type}`"
+              :class="[
+                `is-${item.type}`,
+                item.kind === 'notice' && 'is-notice',
+                item.placement === 'end' && 'is-user',
+                item.type === 'bubble' && item.placement === 'start' && 'is-assistant',
+              ]"
             >
+              <!-- 系统提示：微信系统消息弱化样式（无气泡） -->
+              <div
+                v-if="item.type === 'notice' || item.kind === 'notice'"
+                class="wz-sys-notice"
+              >
+                <div class="wz-sys-notice__text wz-md" v-html="item.html" />
+              </div>
+
+              <!-- 生成总结这一轮：向导发言上方的分隔 -->
+              <div
+                v-else-if="item.type === 'divider'"
+                class="wz-divider"
+                role="separator"
+              />
+
               <!-- 聊天气泡 -->
               <Bubble
-                v-if="item.type === 'bubble'"
+                v-else-if="item.type === 'bubble'"
                 :placement="item.placement"
                 :variant="item.variant"
                 :shape="item.shape"
                 avatar=""
               >
                 <template #content>
-                  <div class="wz-md" v-html="item.html" />
+                  <div class="wz-md">
+                    <div class="wz-md__body" v-html="item.html" />
+                    <!-- 开发态 AI 角标，暂时隐藏
+                    <span
+                      v-if="item.byLlm && isDev"
+                      class="wz-badge-llm"
+                    >AI</span>
+                    -->
+                  </div>
                 </template>
-                <template v-if="item.byLlm" #footer>
-                  <el-tag
-                    class="wz-badge-llm"
-                    size="small"
-                    type="success"
-                    effect="plain"
-                  >
-                    模型生成
-                  </el-tag>
+                <template v-if="item.kind === 'summary'" #footer>
+                  <div class="wz-summary-bar">
+                    <el-tooltip content="复制" placement="top">
+                      <button
+                        type="button"
+                        class="wz-summary-bar__btn"
+                        aria-label="复制"
+                        @click.stop="copySummary(item)"
+                      >
+                        <el-icon><DocumentCopy /></el-icon>
+                      </button>
+                    </el-tooltip>
+                    <el-tooltip content="导出 Markdown" placement="top">
+                      <button
+                        type="button"
+                        class="wz-summary-bar__btn"
+                        aria-label="导出 Markdown"
+                        @click.stop="exportSummary(item)"
+                      >
+                        <el-icon><Download /></el-icon>
+                      </button>
+                    </el-tooltip>
+                    <span
+                      v-if="item.thinkSecs != null"
+                      class="wz-summary-bar__time"
+                    >
+                      思考 {{ formatThinkSecs(item.thinkSecs) }}
+                    </span>
+                  </div>
                 </template>
               </Bubble>
 
-              <!-- 思考中（对话流内） -->
-              <div v-else-if="item.type === 'thinking'" class="wz-thinking">
-                <Thinking
-                  :model-value="true"
-                  status="thinking"
-                  :content="`${item.label || '正在整理'}… ${thinkingSecs}s`"
-                  :auto-collapse="false"
-                  button-width="180px"
-                />
+              <!-- 思考中：一行弱提示，对齐竞品「思考中... Ns」 -->
+              <div
+                v-else-if="item.type === 'thinking'"
+                class="wz-thinking"
+                aria-live="polite"
+                aria-label="思考中"
+              >
+                <span class="wz-thinking__spin" aria-hidden="true" />
+                <span class="wz-thinking__text">
+                  思考中...{{ thinkingSecs ? ` ${thinkingSecs}秒` : '' }}
+                </span>
               </div>
 
               <!-- 交互卡片（历史只读，最新一张可交互） -->
@@ -1059,24 +1461,27 @@ async function restart() {
               <ResultCard
                 v-else-if="item.type === 'result'"
                 :result="item.result || result"
-                :has-preview="hasLiveMatch"
+                :has-preview="item.history ? !!item.preview : hasLiveMatch"
+                :preview="item.preview"
                 :preview-loading="item.history ? false : previewLoading"
                 :build-loading="item.history ? false : buildLoading"
                 :orchestration-mode="orchestrationMode"
                 :orchestration-run="item.history ? null : orchestrationRun"
-                :build-started="!!publishState"
+                :build-started="item.history ? true : !!buildState || !!publishState"
                 :history="!!item.history"
                 @preview="runPreview"
                 @build="startBuild"
               />
 
-              <!-- P2 匹配结果（§8.6：时间线一格，历史自动降级） -->
-              <MatchCard
-                v-else-if="item.type === 'match'"
-                :preview="item.preview"
-                :loading="item.history ? false : previewLoading"
+              <BuildProgressCard
+                v-else-if="item.type === 'build'"
+                :progress="item.history ? item.progress : buildState?.progress"
+                :error="item.history ? item.error || '' : buildState?.error || ''"
+                :elapsed-secs="item.history ? item.elapsedSecs || 0 : (buildState?.elapsedSecs ?? item.elapsedSecs ?? 0)"
+                :mode="orchestrationMode"
+                :show-inspector="showInspector"
                 :history="!!item.history"
-                @rerun="runPreview"
+                @open-room="openExpertRoom"
               />
 
               <PublishCard
@@ -1089,6 +1494,8 @@ async function restart() {
                 :history="!!item.history"
                 :rechecking="gateRechecking"
                 :nudging="nudging"
+                :rejected-approval-ids="publishState?.rejectedApprovalIds ?? []"
+                :preview="item.history ? item.preview : liveResultItem()?.preview"
                 @publish="confirmPublish"
                 @revise="restart"
                 @chat="goChat"
@@ -1098,22 +1505,29 @@ async function restart() {
             </div>
           </div>
 
-          <div class="wz-compose">
-            <ul
-              v-if="question?.examples?.length"
-              class="wz-examples wz-compose__examples"
-            >
-              <li v-for="(ex, i) in question.examples" :key="i">例：{{ ex }}</li>
-            </ul>
-            <XSender
-              ref="senderRef"
-              :placeholder="senderPlaceholder"
-              :loading="loading"
-              :disabled="loading || status === 'aborted'"
-              :tip-config="false"
-              submit-type="enter"
-              @submit="onSenderSubmit"
-            />
+          <div class="wz-compose-dock">
+            <el-tooltip content="回到底部" placement="top">
+              <button
+                v-show="showJumpBottom"
+                type="button"
+                class="wz-jump-bottom"
+                aria-label="回到底部"
+                @click="jumpToBottom"
+              >
+                <el-icon><ArrowDown /></el-icon>
+              </button>
+            </el-tooltip>
+            <div class="wz-compose">
+              <XSender
+                ref="senderRef"
+                :placeholder="senderPlaceholder"
+                :loading="loading"
+                :disabled="loading || status === 'aborted'"
+                :tip-config="false"
+                submit-type="enter"
+                @submit="onSenderSubmit"
+              />
+            </div>
           </div>
         </template>
       </main>

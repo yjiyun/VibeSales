@@ -63,7 +63,7 @@ def call(method,path,data=None):
     req=urllib.request.Request(base+path,data=body,headers={"Content-Type":"application/json"},method=method)
     with urllib.request.urlopen(req,timeout=20) as r:
         return r.status,r.read().decode()
-call("PUT",client,{"enabled":True,"transport":"streamable_http","url":gw+"/mcp-servers/"+client+"/mcp","headers":{"Authorization":"Bearer "+tok}})
+call("PUT",client,{"enabled":True,"transport":"streamable_http","url":gw+"/mcp-servers/"+client,"headers":{"Authorization":"Bearer "+tok}})
 count=None
 for _ in range(20):
     try:

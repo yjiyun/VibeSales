@@ -27,7 +27,6 @@ import { buildRequestContext } from '../common/request-context';
 import { TokenUsageService } from '../common/token-usage.service';
 import { TraceService, peekTraceFromArgv } from '../common/trace.service';
 import {
-  CatalogOption,
   Phase1Result,
   WizardDetailSupplement,
   WizardNextAction,
@@ -266,18 +265,12 @@ export class P1WizardCommand extends CommandRunner {
 
   private async askIndustry(): Promise<string | null> {
     this.line(`\n${WizardSpeech.askIndustry()}\n`);
-    const grouped = this.catalogs.industriesGrouped();
-    let idx = 1;
-    const flat: CatalogOption[] = [];
-    for (const g of grouped) {
-      this.line(`【${g.group}】`);
-      for (const o of g.options) {
-        const desc = o.description ? ` — ${o.description}` : '';
-        this.line(`  ${idx}. ${o.name}${desc}`);
-        flat.push(o);
-        idx += 1;
-      }
-    }
+    const wizard = this.catalogs.wizardIndustryOptions();
+    const all = this.catalogs.optionsFor('industries');
+    wizard.forEach((o, i) => {
+      const desc = o.description ? ` — ${o.description}` : '';
+      this.line(`  ${i + 1}. ${o.name}${desc}`);
+    });
     this.line('  0. 其他 → 直接描述');
 
     while (true) {
@@ -287,19 +280,19 @@ export class P1WizardCommand extends CommandRunner {
       if (n === '0') {
         const free = await this.ask('  请直接描述行业：', 'S1_INDUSTRY_FREE');
         if (!free.trim()) continue;
-        const hit = matchOption(flat, free);
+        const hit = matchOption(all, free);
         if (hit) return hit;
-        const normalized = await this.llm.normalizeIndustry(free, flat);
+        const normalized = await this.llm.normalizeIndustry(free, all);
         return normalized ?? 'general';
       }
       const num = Number(n);
-      if (Number.isInteger(num) && num >= 1 && num <= flat.length) {
-        return flat[num - 1].id;
+      if (Number.isInteger(num) && num >= 1 && num <= wizard.length) {
+        return wizard[num - 1].id;
       }
-      const hit = matchOption(flat, ans);
+      const hit = matchOption(all, ans);
       if (hit) return hit;
       if (ans.trim()) {
-        const normalized = await this.llm.normalizeIndustry(ans, flat);
+        const normalized = await this.llm.normalizeIndustry(ans, all);
         return normalized ?? 'general';
       }
       this.line('  （请输入选项序号）');

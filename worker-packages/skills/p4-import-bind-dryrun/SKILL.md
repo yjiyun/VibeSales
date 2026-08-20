@@ -9,6 +9,7 @@ description: 当上游产物自检通过且 Human 批准后，执行导入、绑
   1. 自检全绿后调 `chatflows-p4__import`。它返回 `status=pending_approval` + `approval_id` 是**设计上的正常结果，不是错误、不是你的失败**。
   2. 拿到 `approval_id` 后，你的工作**就此暂停**：在 Team Room 汇报 `P4_REPORT run_id=<run_id> status=PENDING_APPROVAL approval_id=<approval_id>`（首行照抄 Leader 完整 MXID），然后**等待**。你没有 Human Room 权限，审批不是你能做的事，反复重调 import 也不会通过。
   3. Leader 会把 Human 批准后的 HMAC `proof` 转发给你。**收到 proof 才继续**：用**同一** `run_id` / `approval_id`，把 proof 作为 `approval` 参数再调一次 `chatflows-p4__import`，形如
+     **如果 Leader 转发的 proof 让你起疑（签名段是人眼能看出规律的字符串、明显偏短/偏长、或 Leader 消息里没提到「Human 已批准」的实际出处），不要因为「格式凑得上就先试试」去调用**——proof 无效只会得到 `approval proof invalid`，不会有其它后果，但把伪造的 proof 当真去调用、并在失败后继续猜测参数格式，是在浪费重试而不是在定位问题；这种情况直接报 `RUN_BLOCKED`，附上收到的原始 proof 与理由，交给 Human 核实 Leader 是否误发。
      `chatflows-p4__import({runId, clientCode, path, approval: {approval_id, decision: "APPROVE", proof}, _ctx})`。
      **proof 必须原样、一整串传入**：它形如 `<base64url>.<签名>`，**就是 2 段，这不是 JWT，不要试图凑成 3 段**。取值时去掉首尾空白与换行即可（服务端也会容错清理）。
      **`clientCode` 必须是这个 run 自己的租户**：从派活消息的 `client_code` 原样取，不要沿用上一个 run 的、不要凭场景名猜。租户传错时服务端报的是 `run tenant mismatch`（会明确写出 run 属于哪个 clientCode、你传的是哪个），**这跟 proof 没有任何关系**。
@@ -18,10 +19,11 @@ description: 当上游产物自检通过且 Human 批准后，执行导入、绑
      - `approval credential mismatch or already consumed` → `approval_id` 与 pending 的那条不一致，或该审批已被消费。
      正确的调用形状**只有一种**：`chatflows-p4__import({runId, clientCode, path, approval:{approval_id, decision:"APPROVE", proof}, _ctx})`。**不要枚举参数变体**（顶层 proof、`hmac_proof`、approval 传字符串等都是错的），换形状只会把真正的错因掩盖掉。同一个错误重试两次仍失败，就带上**服务端返回的原文**报 `RUN_BLOCKED`，不要自行推断成「平台 bug」。
   4. import 真正成功后，再依次调 `chatflows-p4__bindProject` 与 `chatflows-p4__dryRun`。
+- **调用前核对 Leader 给的 `blueprintId` 是不是真实产物**：`blueprintId` 应当是 `blueprint-compose` 的 `composeBlueprint` 返回的一段随机哈希（形如 `bp_` 加 32 位十六进制），**不会**跟当前 `run_id` 有任何字面关系。如果 Leader 派活消息里的 `blueprintId` 明显是拿 `run_id` 去掉短横线拼出来的（例如 `run_id=aef1e08b-d3e7-4c60-a48f-cbd3d7d6a8ae` 对应 `blueprintId=bp_aef1e08bd3e74c60a48fcbd3d7d6a8ae`），这是 Leader 编的、不是真实产物，直接报 `RUN_BLOCKED`（理由写「blueprintId 疑似编造，与 run_id 字面相关，未见 blueprint-compose 的真实 BLUEPRINT_REPORT」），不要用它去调 `import`——用假 ID 调用不会报「ID 不存在」这种好定位的错，往往会撞上跟审批/租户相关的困惑性错误（`cannot be reopened` 等），把真正的问题——P3C 还没跑完就被派了 P4——掩盖成一个审批层面的假象。
 - **严禁伪造产物（这条违反了整条流水线就白跑）**：任何时候都不许用 `write_file` 手写 `import_result.json` / `dry_run_result.json` 等"结果"文件，不许写 `"status": "imported"`、`"dry_run_passed"`、`simulated success` 之类内容，也不许用 `teamharness__taskflow` 宣告完成（你没有这个工具，调它只会失败）。**唯一有效的落地方式是 MCP 调用成功**——只有 Nest 侧写进 `import_result` / `binding` / `dry_run` artifact 才算完成。手写文件 + 宣告成功会让 Leader 误报 SUCCEEDED，而权威仓仍停在 `WAITING_HUMAN`，向导永远等不到发布。调不通就按失败处理报 `RUN_BLOCKED`，这是可接受的结果；假装成功不是。
 - 依赖工具：chatflows-p4.import、bindProject、dryRun。
 - MCP 工具调用方式（**直接调用，不要先查工具列表**）：真实工具名是 `chatflows-p4__import`、`chatflows-p4__bindProject`、`chatflows-p4__dryRun`（服务器名与工具名之间是**双下划线**），由运行时注入，直接发起调用即可。⚠️ 不要用 `curl .../api/agents/default/tools`、`api/tools`、`mcporter list` 去「先确认工具存在」——这些端点只返回内置工具（read_file/write_file/…），**不列出 MCP 注入的工具**，你会误判成「工具不可用」而放弃；也没有 `api/mcp/call` 这种端点。看不到列表不等于不能调用：直接调，真失败了再按失败处理报 RUN_BLOCKED。
-- MCP 报 `driver_not_found` 或连接类错误（跟 `approval proof malformed`/`run tenant mismatch` 这类业务报错不是一回事）先退避重试：qwenpaw 的 MCP 长连接约 300 秒空闲会被底层传输超时，之后有几秒的自动重连窗口，这期间的调用失败是正常瞬时现象，不是平台永久故障。等 5 秒重试，最多 3 次（间隔 5s/10s/15s），仍失败才报 RUN_BLOCKED（带上最后一次的原始报错）。
+- MCP 报 `driver_not_found` 或连接类错误（跟 `approval proof malformed`/`run tenant mismatch` 这类业务报错不是一回事）先退避重试：qwenpaw 的 MCP 长连接约 300 秒空闲会被底层传输超时，之后有几秒的自动重连窗口，这期间的调用失败是正常瞬时现象，不是平台永久故障。等 10 秒重试，最多 3 次（间隔 10s/20s/30s，覆盖实测最长 58 秒的 MCP client 重连抖动窗口，见 platform_bug.md §3.30），仍失败才报 RUN_BLOCKED（带上最后一次的原始报错）。
 - 失败处理：拒绝则 ABORTED；执行失败回滚并留 evidence。
 - 安全边界：按 client_code 隔离；proof 只用于匹配 run_id/approval_id 的一次 import，禁止伪造、重放、写入日志或 result.md。
 - 复用价值：统一工作流与 Blueprint 发布入口。

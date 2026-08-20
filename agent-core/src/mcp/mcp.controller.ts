@@ -11,6 +11,19 @@ const MCP_AGENT:Record<string,string>={
 };
 export function agentForMcpServer(server:string):string {const agent=MCP_AGENT[server];if(!agent)throw new Error('unknown MCP server: '+server);return agent;}
 
+// 工具入参/返回值上报前的清洗：剔除 _ctx（内部关联字段，非业务正文）与 approval.proof（HMAC 审批签名令牌，
+// 上报到控制台等于泄露审批凭证）。非对象原样返回。供面板 gen_ai.input/output.messages 使用。
+export function sanitizeToolIo(value:unknown):unknown{
+  if(!value||typeof value!=='object'||Array.isArray(value))return value;
+  const src=value as Record<string,unknown>;const out:Record<string,unknown>={};
+  for(const[k,v]of Object.entries(src)){
+    if(k==='_ctx')continue;
+    if(k==='approval'&&v&&typeof v==='object'&&!Array.isArray(v)){const{proof,...rest}=v as Record<string,unknown>;out[k]=rest;continue;}
+    out[k]=v;
+  }
+  return out;
+}
+
 @Controller('mcp-servers')
 export class McpController {
   constructor(private readonly mcp: McpService, private readonly trace: TraceService) {}
@@ -44,12 +57,15 @@ export class McpController {
           traceparent: traceparent || undefined, agent,
           server, tool, phase, approval_id:inputApproval?.approval_id,
           approval_state:inputApproval?.decision==='DENY'?'denied':inputApproval?.decision==='APPROVE'?'approved':undefined,
+          // 工具入参作为面板「输入」：去掉 _ctx（内部关联字段）与 approval.proof（HMAC 审批签名，勿上报）。
+          tool_input: sanitizeToolIo(args),
         });
         const value = await this.mcp.call(server, tool, callArgs);
         const output=value&&typeof value==='object'&&!Array.isArray(value)?value as Record<string,unknown>:{};
         const approvalId=String(output.approval_id??inputApproval?.approval_id??'')||undefined;
         const approvalState=output.status==='pending_approval'?'pending_approval':inputApproval?.decision==='DENY'?'denied':inputApproval?.decision==='APPROVE'?'approved':undefined;
-        this.trace.step('MCP','tool.result',{run_id:runId,client_code:clientCode,request_id:requestId,traceparent:traceparent||undefined,agent,server,tool,phase,approval_id:approvalId,approval_state:approvalState});
+        // 工具返回值作为面板「输出」。
+        this.trace.step('MCP','tool.result',{run_id:runId,client_code:clientCode,request_id:requestId,traceparent:traceparent||undefined,agent,server,tool,phase,approval_id:approvalId,approval_state:approvalState,tool_output:sanitizeToolIo(value)});
         // MCP 规范要求 structuredContent 是对象；直接塞数组（listSkillCandidates /
         // listToolCandidates 这类返回数组的工具）会让客户端校验 CallToolResult 失败
         // （pydantic dict_type），Worker 只看到「driver 端序列化 bug」而拿不到候选。

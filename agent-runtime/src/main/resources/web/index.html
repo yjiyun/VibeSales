@@ -1,0 +1,1074 @@
+<!doctype html>
+<html lang="zh-CN">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>Sales Customer Agent 联调页</title>
+    <style>
+      :root {
+        --bg: #07111f;
+        --panel: rgba(9, 21, 38, 0.9);
+        --panel-soft: rgba(7, 17, 31, 0.48);
+        --line: rgba(148, 163, 184, 0.18);
+        --line-strong: rgba(98, 208, 255, 0.24);
+        --text: #e5eefb;
+        --muted: #8aa0be;
+        --accent: #62d0ff;
+        --accent-soft: rgba(98, 208, 255, 0.12);
+        --accent-2: #7cffb2;
+        --danger: #ff8e8e;
+      }
+
+      * {
+        box-sizing: border-box;
+      }
+
+      body {
+        margin: 0;
+        min-height: 100vh;
+        font-family: "PingFang SC", "Hiragino Sans GB", "Microsoft YaHei", sans-serif;
+        color: var(--text);
+        background:
+          radial-gradient(circle at top left, rgba(98, 208, 255, 0.15), transparent 30%),
+          radial-gradient(circle at top right, rgba(124, 255, 178, 0.1), transparent 22%),
+          linear-gradient(180deg, #08111f 0%, #050b14 100%);
+      }
+
+      .page-shell {
+        width: min(1380px, calc(100% - 32px));
+        margin: 24px auto 32px;
+        display: grid;
+        gap: 18px;
+      }
+
+      .panel {
+        border: 1px solid var(--line);
+        background: var(--panel);
+        backdrop-filter: blur(14px);
+        border-radius: 24px;
+        box-shadow: 0 18px 60px rgba(0, 0, 0, 0.3);
+      }
+
+      .hero {
+        padding: 28px;
+      }
+
+      .eyebrow {
+        display: inline-flex;
+        align-items: center;
+        gap: 8px;
+        padding: 8px 12px;
+        border-radius: 999px;
+        background: var(--accent-soft);
+        border: 1px solid var(--line-strong);
+        color: var(--accent);
+        font-size: 12px;
+        letter-spacing: 0.08em;
+      }
+
+      h1 {
+        margin: 18px 0 10px;
+        font-size: clamp(28px, 4vw, 44px);
+        line-height: 1.08;
+      }
+
+      .sub {
+        margin: 0;
+        max-width: 980px;
+        color: var(--muted);
+        font-size: 14px;
+        line-height: 1.8;
+      }
+
+      .context-shell {
+        margin-top: 18px;
+        padding: 18px;
+        border: 1px solid var(--line);
+        border-radius: 18px;
+        background: var(--panel-soft);
+      }
+
+      .context-head {
+        display: flex;
+        align-items: center;
+        justify-content: space-between;
+        gap: 12px;
+        flex-wrap: wrap;
+      }
+
+      .context-title {
+        font-size: 14px;
+        font-weight: 600;
+      }
+
+      .context-note {
+        font-size: 12px;
+        color: var(--muted);
+      }
+
+      .chip-row {
+        margin-top: 14px;
+        display: flex;
+        flex-wrap: wrap;
+        gap: 10px;
+      }
+
+      .chip {
+        display: inline-flex;
+        align-items: center;
+        gap: 8px;
+        padding: 8px 12px;
+        border-radius: 999px;
+        border: 1px solid var(--line);
+        background: rgba(255, 255, 255, 0.04);
+        color: var(--text);
+        font-size: 12px;
+      }
+
+      .chip-label {
+        color: var(--muted);
+      }
+
+      .chip-value {
+        max-width: 260px;
+        overflow: hidden;
+        text-overflow: ellipsis;
+        white-space: nowrap;
+      }
+
+      .layout {
+        display: grid;
+        grid-template-columns: 1.18fr 0.82fr;
+        gap: 18px;
+      }
+
+      .main-panel {
+        padding: 26px;
+        display: grid;
+        gap: 16px;
+        align-content: start;
+      }
+
+      .result-panel {
+        padding: 26px;
+        display: grid;
+        gap: 14px;
+        align-content: start;
+        min-height: 640px;
+      }
+
+      .card {
+        border: 1px solid var(--line);
+        border-radius: 20px;
+        padding: 18px;
+        background: var(--panel-soft);
+      }
+
+      .card h2,
+      .card h3 {
+        margin: 0 0 12px;
+        font-size: 15px;
+      }
+
+      .grid {
+        display: grid;
+        grid-template-columns: repeat(2, minmax(0, 1fr));
+        gap: 12px;
+      }
+
+      label {
+        display: grid;
+        gap: 8px;
+        color: var(--muted);
+        font-size: 12px;
+        letter-spacing: 0.02em;
+      }
+
+      input,
+      textarea {
+        width: 100%;
+        border: 1px solid rgba(148, 163, 184, 0.18);
+        border-radius: 14px;
+        background: rgba(3, 9, 18, 0.82);
+        color: var(--text);
+        padding: 12px 14px;
+        font: inherit;
+      }
+
+      textarea {
+        min-height: 148px;
+        resize: vertical;
+      }
+
+      .actions {
+        display: flex;
+        gap: 12px;
+        margin-top: 14px;
+        flex-wrap: wrap;
+      }
+
+      button {
+        border: 0;
+        cursor: pointer;
+        border-radius: 999px;
+        padding: 12px 18px;
+        font: inherit;
+        font-weight: 600;
+      }
+
+      .primary {
+        background: linear-gradient(135deg, var(--accent), #86f7ff);
+        color: #03233d;
+      }
+
+      .secondary {
+        background: rgba(255, 255, 255, 0.06);
+        color: var(--text);
+        border: 1px solid var(--line);
+      }
+
+      .hint {
+        margin-top: 10px;
+        color: var(--muted);
+        font-size: 12px;
+        line-height: 1.7;
+      }
+
+      details.advanced {
+        border: 1px solid var(--line);
+        border-radius: 20px;
+        background: rgba(255, 255, 255, 0.03);
+        overflow: hidden;
+      }
+
+      details.advanced summary {
+        list-style: none;
+        cursor: pointer;
+        padding: 18px 20px;
+        font-weight: 600;
+        display: flex;
+        align-items: center;
+        justify-content: space-between;
+        gap: 12px;
+      }
+
+      details.advanced summary::-webkit-details-marker {
+        display: none;
+      }
+
+      .summary-meta {
+        font-size: 12px;
+        color: var(--muted);
+        font-weight: 400;
+      }
+
+      .advanced-inner {
+        padding: 0 20px 20px;
+        display: grid;
+        gap: 16px;
+      }
+
+      .result-head {
+        display: flex;
+        align-items: center;
+        justify-content: space-between;
+        gap: 12px;
+        flex-wrap: wrap;
+      }
+
+      .pill-row {
+        display: flex;
+        flex-wrap: wrap;
+        gap: 10px;
+      }
+
+      .pill {
+        padding: 8px 12px;
+        border-radius: 999px;
+        background: rgba(255, 255, 255, 0.05);
+        border: 1px solid var(--line);
+        color: var(--muted);
+        font-size: 12px;
+      }
+
+      .reply {
+        min-height: 200px;
+        border-radius: 18px;
+        padding: 18px;
+        background: linear-gradient(180deg, rgba(98, 208, 255, 0.08), rgba(98, 208, 255, 0.02));
+        border: 1px solid rgba(98, 208, 255, 0.15);
+        line-height: 1.8;
+        white-space: pre-wrap;
+      }
+
+      .timeline-card {
+        border: 1px solid var(--line);
+        border-radius: 20px;
+        padding: 18px;
+        background: rgba(255, 255, 255, 0.03);
+        display: grid;
+        gap: 14px;
+      }
+
+      .timeline-head {
+        display: flex;
+        align-items: center;
+        justify-content: space-between;
+        gap: 12px;
+        flex-wrap: wrap;
+      }
+
+      .timeline-title {
+        margin: 0;
+        font-size: 15px;
+      }
+
+      .timeline-status {
+        font-size: 12px;
+        color: var(--muted);
+      }
+
+      .timeline-list {
+        display: grid;
+        gap: 10px;
+      }
+
+      .timeline-empty {
+        color: var(--muted);
+        font-size: 13px;
+      }
+
+      .timeline-item {
+        border: 1px solid var(--line);
+        border-radius: 16px;
+        padding: 12px 14px;
+        background: rgba(3, 9, 18, 0.5);
+        display: grid;
+        gap: 8px;
+      }
+
+      .timeline-item.timeline-end {
+        border-color: rgba(124, 255, 178, 0.26);
+      }
+
+      .timeline-item.timeline-start {
+        border-color: rgba(98, 208, 255, 0.24);
+      }
+
+      .timeline-item.timeline-error {
+        border-color: rgba(255, 142, 142, 0.4);
+      }
+
+      .timeline-row {
+        display: flex;
+        align-items: center;
+        justify-content: space-between;
+        gap: 12px;
+      }
+
+      .timeline-label {
+        font-size: 13px;
+        font-weight: 600;
+      }
+
+      .timeline-meta {
+        font-size: 12px;
+        color: var(--muted);
+      }
+
+      .timeline-detail {
+        font-size: 12px;
+        color: var(--muted);
+        line-height: 1.6;
+        word-break: break-word;
+      }
+
+      .meta {
+        display: grid;
+        gap: 12px;
+      }
+
+      .meta-block {
+        border: 1px solid var(--line);
+        border-radius: 18px;
+        padding: 14px;
+        background: rgba(255, 255, 255, 0.03);
+      }
+
+      .meta-title {
+        font-size: 12px;
+        color: var(--muted);
+        margin-bottom: 8px;
+      }
+
+      .empty {
+        color: var(--muted);
+      }
+
+      .error {
+        color: var(--danger);
+      }
+
+      @media (max-width: 1080px) {
+        .layout {
+          grid-template-columns: 1fr;
+        }
+      }
+
+      @media (max-width: 720px) {
+        .grid {
+          grid-template-columns: 1fr;
+        }
+
+        .page-shell {
+          width: calc(100% - 20px);
+          margin: 10px auto 20px;
+        }
+
+        .hero,
+        .main-panel,
+        .result-panel {
+          padding: 18px;
+        }
+      }
+    </style>
+  </head>
+  <body>
+    <div class="page-shell">
+      <section class="panel hero">
+        <span class="eyebrow">AI CUSTOMER CHAT HARNESS</span>
+        <h1>销售客服智能体<br />参数级联调页</h1>
+        <p class="sub">
+          当前页面通过 `POST /api/chat/runs` + `SSE /api/chat/runs/{runId}/events` 做参数级验证，并实时展示编排层与 Agent 内部执行进度。
+          来自 `marketing-agent-service` 的测试入口会通过 URL 预填客户与会话上下文，页面仍保留完整参数可见与可改能力，便于核对
+          `conversationId`、`chatUser`、`robotConversationId` 等字段是否对齐。
+        </p>
+        <div class="context-shell">
+          <div class="context-head">
+            <div class="context-title">本次会话上下文</div>
+            <div class="context-note" id="contextMode">直接访问模式：高级参数区默认展开</div>
+          </div>
+          <div class="chip-row" id="contextChips"></div>
+        </div>
+      </section>
+
+      <section class="layout">
+        <section class="panel main-panel">
+          <div class="card">
+            <h2>用户消息</h2>
+            <label>message
+              <textarea id="message">你好，我刚才问过补水方案，想继续看适合油皮的推荐。</textarea>
+            </label>
+            <div class="actions">
+              <button class="primary" id="sendButton">发送验证请求</button>
+              <button class="secondary" id="fillNewRound">填入新问题示例</button>
+            </div>
+            <div class="hint">
+              `messageId` 与 `sendTime` 会在发送前自动补齐；如果 URL 未传 `robotConversationId` / `robotKey`，页面会保留为空，让后端走默认占位逻辑。
+            </div>
+          </div>
+
+          <details class="advanced" id="advancedParams">
+            <summary>
+              <span>高级参数（可覆盖）</span>
+              <span class="summary-meta">URL 预填后默认折叠；直接访问时默认展开</span>
+            </summary>
+            <div class="advanced-inner">
+              <div class="card">
+                <h2>业务作用域</h2>
+                <p class="summary-meta" style="margin: 0 0 10px;">
+                  clientCode + cluster 两级决定装配哪份 AgentBlueprint：先按两者精确命中，命中不到
+                  才降级到该 clientCode 的默认蓝图。已登记：<code>yjiyuncom</code> +
+                  <code>test</code>（测试租户专属版）、<code>yjiyuncom</code> + 空 cluster（默认版，
+                  也是降级目标）、<code>hanmei_apparel</code>（女装）。
+                  填未登记的 clientCode 会回落到内置兜底提示词，时间线上会标
+                  <code>source=fallback</code>；cluster 降级会标
+                  <code>matchLevel=cluster_fallback</code>。
+                  可用作用域清单见 <code>/api/debug/agent-blueprint</code>。
+                </p>
+                <div class="grid">
+                  <label>clientCode
+                    <input id="clientCode" value="yjiyuncom" list="clientCodeOptions" />
+                    <datalist id="clientCodeOptions">
+                      <option value="yjiyuncom"></option>
+                      <option value="hanmei_apparel"></option>
+                    </datalist>
+                  </label>
+                  <label>cluster
+                    <input id="cluster" value="test" list="clusterOptions" />
+                    <datalist id="clusterOptions">
+                      <option value="test"></option>
+                      <option value=""></option>
+                    </datalist>
+                  </label>
+                  <label style="grid-column: 1 / -1;">sceneCode
+                    <input id="sceneCode" value="BEAUTY_SKINCARE" />
+                  </label>
+                </div>
+              </div>
+
+              <div class="card">
+                <h2>平台创建会话</h2>
+                <div class="grid">
+                  <label>conversationName
+                    <input id="createConversationName" value="李豪72-首轮咨询" />
+                  </label>
+                  <label style="grid-column: 1 / -1;">metadata JSON
+                    <textarea id="createConversationMetadata">{
+  "channel": "agent-connector",
+  "source": "wechat-work",
+  "note": "创建会话接口最小验证"
+}</textarea>
+                  </label>
+                </div>
+                <div class="actions">
+                  <button class="secondary" id="createConversationButton">先创建平台会话</button>
+                </div>
+              </div>
+
+              <div class="card">
+                <h2>`input_data` 接入上下文</h2>
+                <div class="grid">
+                  <label>conversationId
+                    <input id="inputConversationId" value="sales7881300016900726" />
+                  </label>
+                  <label>robotConversationId
+                    <input id="robotConversationId" value="S:1688855002789689_7881300016900726" />
+                  </label>
+                  <label>robotKey
+                    <input id="robotKey" value="ea32924b1eb64b57b702f4cac43a4da5" />
+                  </label>
+                  <label>chatUser
+                    <input id="chatUser" value="7881300016900726" />
+                  </label>
+                  <label>user_id
+                    <input id="userId" value="7881300016900726" />
+                  </label>
+                  <label>user_name
+                    <input id="userName" value="李豪72" />
+                  </label>
+                  <label>conversationName
+                    <input id="conversationName" value="李豪72" />
+                  </label>
+                  <label>messageId
+                    <input id="messageId" value="" />
+                  </label>
+                  <label>sendTime
+                    <input id="sendTime" value="" />
+                  </label>
+                  <label>addMsgCount
+                    <input id="addMsgCount" value="0" />
+                  </label>
+                </div>
+              </div>
+
+              <div class="card">
+                <h2>知识库健康检查</h2>
+                <div class="grid">
+                  <label style="grid-column: 1 / -1;">sample query
+                    <input id="knowledgeQuery" value="补水方案" />
+                  </label>
+                </div>
+                <div class="actions">
+                  <button class="secondary" id="checkKnowledgeButton">验证知识库配置</button>
+                </div>
+              </div>
+            </div>
+          </details>
+        </section>
+
+        <aside class="panel result-panel">
+          <div class="result-head">
+            <h2 style="margin: 0;">智能体输出</h2>
+            <div class="pill-row">
+              <span class="pill">契约唯一来源</span>
+              <span class="pill">多轮会话预填</span>
+              <span class="pill">参数级可覆盖</span>
+            </div>
+          </div>
+
+          <div class="reply empty" id="reply">等待发起请求...</div>
+
+          <div class="timeline-card">
+            <div class="timeline-head">
+              <h3 class="timeline-title">执行时间线</h3>
+              <div class="timeline-status" id="timelineStatus">未开始</div>
+            </div>
+            <div class="timeline-list" id="timelineList">
+              <div class="timeline-empty">等待发起请求...</div>
+            </div>
+          </div>
+
+          <div class="meta">
+            <div class="meta-block">
+              <div class="meta-title">创建会话状态</div>
+              <div id="createConversationStatus" class="empty">-</div>
+            </div>
+            <div class="meta-block">
+              <div class="meta-title">创建时间</div>
+              <div id="createConversationCreatedAt" class="empty">-</div>
+            </div>
+            <div class="meta-block">
+              <div class="meta-title">内部会话 ID</div>
+              <div id="conversationIdView" class="empty">-</div>
+            </div>
+            <div class="meta-block">
+              <div class="meta-title">外部会话 ID</div>
+              <div id="robotConversationIdView" class="empty">-</div>
+            </div>
+            <div class="meta-block">
+              <div class="meta-title">robotKey</div>
+              <div id="robotKeyView" class="empty">-</div>
+            </div>
+            <div class="meta-block">
+              <div class="meta-title">conversationName</div>
+              <div id="conversationNameView" class="empty">-</div>
+            </div>
+            <div class="meta-block">
+              <div class="meta-title">messageId</div>
+              <div id="messageIdView" class="empty">-</div>
+            </div>
+            <div class="meta-block">
+              <div class="meta-title">恢复链路</div>
+              <div id="recoveryMode" class="empty">-</div>
+            </div>
+            <div class="meta-block">
+              <div class="meta-title">chatUser</div>
+              <div id="chatUserView" class="empty">-</div>
+            </div>
+            <div class="meta-block">
+              <div class="meta-title">目标意图</div>
+              <div id="targetIntent" class="empty">-</div>
+            </div>
+            <div class="meta-block">
+              <div class="meta-title">历史摘要</div>
+              <div id="historySummary" class="empty">-</div>
+            </div>
+            <div class="meta-block">
+              <div class="meta-title">客户画像</div>
+              <div id="profileSummary" class="empty">-</div>
+            </div>
+            <div class="meta-block">
+              <div class="meta-title">队列版本</div>
+              <div id="queueVersion" class="empty">-</div>
+            </div>
+            <div class="meta-block">
+              <div class="meta-title">知识库状态</div>
+              <div id="knowledgeStatus" class="empty">-</div>
+            </div>
+            <div class="meta-block">
+              <div class="meta-title">知识库说明</div>
+              <div id="knowledgeMessage" class="empty">-</div>
+            </div>
+            <div class="meta-block">
+              <div class="meta-title">workspace / knowledge base</div>
+              <div id="knowledgeWorkspace" class="empty">-</div>
+            </div>
+            <div class="meta-block">
+              <div class="meta-title">检索命中数</div>
+              <div id="knowledgeHits" class="empty">-</div>
+            </div>
+          </div>
+        </aside>
+      </section>
+    </div>
+
+    <script>
+      const el = (id) => document.getElementById(id);
+      const reply = el("reply");
+      const createConversationStatus = el("createConversationStatus");
+      const createConversationCreatedAt = el("createConversationCreatedAt");
+      const conversationIdView = el("conversationIdView");
+      const robotConversationIdView = el("robotConversationIdView");
+      const robotKeyView = el("robotKeyView");
+      const conversationNameView = el("conversationNameView");
+      const messageIdView = el("messageIdView");
+      const chatUserView = el("chatUserView");
+      const recoveryMode = el("recoveryMode");
+      const targetIntent = el("targetIntent");
+      const historySummary = el("historySummary");
+      const profileSummary = el("profileSummary");
+      const queueVersion = el("queueVersion");
+      const knowledgeStatus = el("knowledgeStatus");
+      const knowledgeMessage = el("knowledgeMessage");
+      const knowledgeWorkspace = el("knowledgeWorkspace");
+      const knowledgeHits = el("knowledgeHits");
+      const timelineStatus = el("timelineStatus");
+      const timelineList = el("timelineList");
+      const contextMode = el("contextMode");
+      const contextChips = el("contextChips");
+      const advancedParams = el("advancedParams");
+      let activeEventSource = null;
+      let currentRunTerminal = false;
+      let timelineItems = new Map();
+
+      function normalizeText(value) {
+        return typeof value === "string" ? value.trim() : "";
+      }
+
+      function pad(num) {
+        return String(num).padStart(2, "0");
+      }
+
+      function formatNow() {
+        const now = new Date();
+        return (
+          now.getFullYear() + "-" +
+          pad(now.getMonth() + 1) + "-" +
+          pad(now.getDate()) + " " +
+          pad(now.getHours()) + ":" +
+          pad(now.getMinutes()) + ":" +
+          pad(now.getSeconds())
+        );
+      }
+
+      function buildMessageId() {
+        return "merged_" + Date.now() + "_" + Math.random().toString(36).slice(2, 10);
+      }
+
+      function parseJson(response) {
+        return response.json().catch(() => ({}));
+      }
+
+      function closeActiveEventSource() {
+        if (activeEventSource) {
+          activeEventSource.close();
+          activeEventSource = null;
+        }
+      }
+
+      function setTimelineStatus(text) {
+        timelineStatus.textContent = text;
+      }
+
+      function resetTimeline() {
+        timelineItems = new Map();
+        timelineList.innerHTML = '<div class="timeline-empty">等待事件流...</div>';
+        currentRunTerminal = false;
+        setTimelineStatus("运行创建中...");
+      }
+
+      function renderTimelineEmpty(text) {
+        timelineList.innerHTML = '<div class="timeline-empty">' + text + '</div>';
+      }
+
+      function formatElapsed(value) {
+        return typeof value === "number" ? value + "ms" : "-";
+      }
+
+      function trimDetailValue(value) {
+        if (value == null || value === "") return "-";
+        const text = typeof value === "string" ? value : JSON.stringify(value);
+        return text.length > 120 ? text.slice(0, 117) + "..." : text;
+      }
+
+      function formatDetail(detail) {
+        if (!detail || typeof detail !== "object") return "";
+        const entries = Object.entries(detail)
+          .filter(([, value]) => value !== null && value !== undefined && value !== "")
+          .slice(0, 6);
+        return entries.map(([key, value]) => key + "=" + trimDetailValue(value)).join(" · ");
+      }
+
+      function timelineSymbol(status) {
+        if (status === "end") return "✓";
+        if (status === "error") return "✕";
+        return "…";
+      }
+
+      function applyChatResponseData(data) {
+        reply.textContent = data.reply || "(empty)";
+        reply.className = "reply";
+        conversationIdView.textContent = data.conversationId || normalizeText(el("inputConversationId").value) || "-";
+        robotConversationIdView.textContent = data.robotConversationId || normalizeText(el("robotConversationId").value) || "-";
+        robotKeyView.textContent = data.robotKey || normalizeText(el("robotKey").value) || "-";
+        conversationNameView.textContent = data.conversationName || normalizeText(el("conversationName").value) || "-";
+        messageIdView.textContent = data.messageId || normalizeText(el("messageId").value) || "-";
+        chatUserView.textContent = data.chatUser || normalizeText(el("chatUser").value) || "-";
+        recoveryMode.textContent = data.recoveryMode || "-";
+        targetIntent.textContent = data.targetIntent || "-";
+        historySummary.textContent = data.historySummary || "-";
+        profileSummary.textContent = data.profileSummary || "-";
+        queueVersion.textContent = data.queueVersion || "-";
+      }
+
+      function upsertTimelineEvent(event) {
+        if (!event || typeof event !== "object") return;
+        const key = event.phase + ":" + event.step;
+        let item = timelineItems.get(key);
+        if (!item) {
+          if (timelineList.querySelector(".timeline-empty")) {
+            timelineList.innerHTML = "";
+          }
+          item = document.createElement("div");
+          item.innerHTML = (
+            '<div class="timeline-row">' +
+              '<div class="timeline-label"></div>' +
+              '<div class="timeline-meta"></div>' +
+            '</div>' +
+            '<div class="timeline-detail"></div>'
+          );
+          timelineItems.set(key, item);
+          timelineList.appendChild(item);
+        }
+        item.className = "timeline-item timeline-" + (event.status || "start");
+        item.querySelector(".timeline-label").textContent =
+          timelineSymbol(event.status) + " " + (event.label || event.step || key);
+        item.querySelector(".timeline-meta").textContent =
+          (event.phase || "-") + " · " + formatElapsed(event.elapsedMs);
+        item.querySelector(".timeline-detail").textContent = formatDetail(event.detail) || "无补充明细";
+      }
+
+      function getQueryPreset() {
+        const params = new URLSearchParams(window.location.search || "");
+        const preset = {
+          clientCode: normalizeText(params.get("clientCode")),
+          cluster: normalizeText(params.get("cluster")),
+          sceneCode: normalizeText(params.get("sceneCode")),
+          conversationId: normalizeText(params.get("conversationId")),
+          chatUser: normalizeText(params.get("chatUser")),
+          userId: normalizeText(params.get("userId") || params.get("user_id")),
+          userName: normalizeText(params.get("userName") || params.get("user_name")),
+          conversationName: normalizeText(params.get("conversationName")),
+          nickname: normalizeText(params.get("nickname")),
+          customerId: normalizeText(params.get("customerId")),
+          robotConversationId: normalizeText(params.get("robotConversationId")),
+          robotKey: normalizeText(params.get("robotKey")),
+          from: normalizeText(params.get("from")),
+        };
+        preset.hasPrefill = Object.keys(preset).some((key) => key !== "hasPrefill" && key !== "from" && Boolean(preset[key]));
+        return preset;
+      }
+
+      function renderContext(preset) {
+        const chips = [
+          ["clientCode", preset.clientCode || "-"],
+          ["cluster", preset.cluster || "-"],
+          ["sceneCode", preset.sceneCode || "-"],
+          ["customerId", preset.customerId || "-"],
+          ["chatUser", preset.chatUser || "-"],
+          ["conversationId", preset.conversationId || "-"],
+          ["nickname", preset.nickname || preset.userName || "-"],
+          ["from", preset.from || "direct"],
+        ];
+        contextChips.innerHTML = chips.map(([label, value]) => (
+          '<span class="chip"><span class="chip-label">' + label + '</span><span class="chip-value">' + value + '</span></span>'
+        )).join("");
+        contextMode.textContent = preset.hasPrefill
+          ? "来自 marketing 测试控制台：高级参数区默认折叠，可按需展开覆盖"
+          : "直接访问模式：高级参数区默认展开";
+      }
+
+      function applyQueryPreset() {
+        const preset = getQueryPreset();
+        if (preset.clientCode) el("clientCode").value = preset.clientCode;
+        if (preset.cluster) el("cluster").value = preset.cluster;
+        if (preset.sceneCode) el("sceneCode").value = preset.sceneCode;
+        if (preset.conversationId) el("inputConversationId").value = preset.conversationId;
+        if (preset.chatUser) el("chatUser").value = preset.chatUser;
+        if (preset.userId) el("userId").value = preset.userId;
+        if (preset.userName || preset.nickname) {
+          const displayName = preset.userName || preset.nickname;
+          el("userName").value = displayName;
+          el("conversationName").value = preset.conversationName || displayName;
+          el("createConversationName").value = (displayName || "测试客户") + "-会话创建";
+        }
+        if (preset.hasPrefill) {
+          el("robotConversationId").value = preset.robotConversationId || "";
+          el("robotKey").value = preset.robotKey || "";
+          el("messageId").value = "";
+          el("sendTime").value = "";
+          el("addMsgCount").value = "0";
+          advancedParams.open = false;
+        } else {
+          advancedParams.open = true;
+        }
+        renderContext(preset);
+      }
+
+      function syncMetaFromForm() {
+        conversationIdView.textContent = normalizeText(el("inputConversationId").value) || "-";
+        robotConversationIdView.textContent = normalizeText(el("robotConversationId").value) || "-";
+        robotKeyView.textContent = normalizeText(el("robotKey").value) || "-";
+        conversationNameView.textContent = normalizeText(el("conversationName").value) || "-";
+        messageIdView.textContent = normalizeText(el("messageId").value) || "-";
+        chatUserView.textContent = normalizeText(el("chatUser").value) || "-";
+      }
+
+      function ensureRuntimeFields() {
+        if (!normalizeText(el("messageId").value)) {
+          el("messageId").value = buildMessageId();
+        }
+        if (!normalizeText(el("sendTime").value)) {
+          el("sendTime").value = formatNow();
+        }
+        if (!normalizeText(el("addMsgCount").value)) {
+          el("addMsgCount").value = "0";
+        }
+        syncMetaFromForm();
+      }
+
+      el("fillNewRound").addEventListener("click", () => {
+        el("message").value = "你好，我想了解适合混油皮的提亮产品。";
+        if (!normalizeText(el("inputConversationId").value)) {
+          el("inputConversationId").value = "sca-conversation-" + Date.now();
+        }
+        el("messageId").value = buildMessageId();
+        el("sendTime").value = formatNow();
+        syncMetaFromForm();
+      });
+
+      el("createConversationButton").addEventListener("click", async () => {
+        createConversationStatus.textContent = "创建中...";
+        createConversationCreatedAt.textContent = "-";
+
+        let metadata;
+        try {
+          const raw = el("createConversationMetadata").value.trim();
+          metadata = raw ? JSON.parse(raw) : {};
+        } catch (error) {
+          createConversationStatus.textContent = "metadata_json_invalid";
+          createConversationCreatedAt.textContent = error.message;
+          return;
+        }
+
+        try {
+          const response = await fetch("/api/conversations", {
+            method: "POST",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify({
+              conversationName: el("createConversationName").value,
+              metadata,
+            }),
+          });
+          const data = await parseJson(response);
+          if (!response.ok) {
+            throw new Error(data.message || "创建会话失败");
+          }
+          createConversationStatus.textContent = data.status || "created";
+          createConversationCreatedAt.textContent = data.createdAt || "-";
+          el("inputConversationId").value = data.conversationId || el("inputConversationId").value;
+          conversationIdView.textContent = data.conversationId || "-";
+          if (data.conversationName) {
+            el("conversationName").value = data.conversationName;
+            conversationNameView.textContent = data.conversationName;
+          }
+        } catch (error) {
+          createConversationStatus.textContent = "create_failed";
+          createConversationCreatedAt.textContent = error.message;
+        }
+      });
+
+      el("sendButton").addEventListener("click", async () => {
+        ensureRuntimeFields();
+        closeActiveEventSource();
+        resetTimeline();
+        reply.textContent = "请求发送中，等待执行结果...";
+        reply.className = "reply";
+
+        const payload = {
+          clientCode: el("clientCode").value,
+          cluster: el("cluster").value,
+          sceneCode: el("sceneCode").value,
+          message: el("message").value,
+          input_data: {
+            conversationId: el("inputConversationId").value,
+            robotConversationId: el("robotConversationId").value,
+            robotKey: el("robotKey").value,
+            chatUser: el("chatUser").value,
+            user_id: el("userId").value,
+            user_name: el("userName").value,
+            conversationName: el("conversationName").value,
+            messageId: el("messageId").value,
+            sendTime: el("sendTime").value,
+            addMsgCount: el("addMsgCount").value,
+          },
+        };
+
+        try {
+          const response = await fetch("/api/chat/runs", {
+            method: "POST",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify(payload),
+          });
+          const data = await parseJson(response);
+          if (!response.ok) {
+            throw new Error(data.message || data.error || "请求失败");
+          }
+          const runId = data.runId;
+          if (!runId) {
+            throw new Error("runId 缺失");
+          }
+          setTimelineStatus("已创建 run：" + runId);
+          activeEventSource = new EventSource("/api/chat/runs/" + encodeURIComponent(runId) + "/events");
+          const handleProgressEvent = (messageEvent) => {
+            let event;
+            try {
+              event = JSON.parse(messageEvent.data || "{}");
+            } catch (error) {
+              return;
+            }
+            upsertTimelineEvent(event);
+            if (event.step === "run.complete") {
+              currentRunTerminal = true;
+              if (event.status === "end") {
+                applyChatResponseData(event.detail || {});
+                setTimelineStatus("运行完成：" + runId);
+              } else {
+                reply.textContent = "请求失败：" + ((event.detail && event.detail.message) || "未知错误");
+                reply.className = "reply error";
+                setTimelineStatus("运行失败：" + runId);
+              }
+            } else {
+              setTimelineStatus("运行中：" + runId);
+            }
+            if (event.terminal) {
+              closeActiveEventSource();
+            }
+          };
+          activeEventSource.addEventListener("progress", handleProgressEvent);
+          activeEventSource.onmessage = handleProgressEvent;
+          activeEventSource.onerror = () => {
+            if (currentRunTerminal) {
+              closeActiveEventSource();
+              return;
+            }
+            setTimelineStatus("事件流连接中断，等待浏览器重连...");
+          };
+        } catch (error) {
+          reply.textContent = "请求失败：" + error.message;
+          reply.className = "reply error";
+          renderTimelineEmpty("请求失败：" + error.message);
+          setTimelineStatus("创建失败");
+        }
+      });
+
+      el("checkKnowledgeButton").addEventListener("click", async () => {
+        knowledgeStatus.textContent = "检查中...";
+        knowledgeMessage.textContent = "-";
+        knowledgeWorkspace.textContent = "-";
+        knowledgeHits.textContent = "-";
+
+        try {
+          const query = encodeURIComponent(el("knowledgeQuery").value || "");
+          const response = await fetch("/api/health/knowledge?q=" + query);
+          const data = await parseJson(response);
+
+          knowledgeStatus.textContent = data.status || "-";
+          knowledgeMessage.textContent = data.message || "-";
+          knowledgeWorkspace.textContent =
+            (data.workspaceId || "-") + " / " + (data.knowledgeBaseId || "-");
+          knowledgeHits.textContent =
+            "documents=" + (data.documentCount ?? "-") +
+            ", retrieved=" + (data.retrievedNodeCount ?? "-");
+        } catch (error) {
+          knowledgeStatus.textContent = "request_failed";
+          knowledgeMessage.textContent = error.message;
+        }
+      });
+
+      applyQueryPreset();
+      syncMetaFromForm();
+    </script>
+  </body>
+</html>

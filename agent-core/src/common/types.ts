@@ -38,6 +38,8 @@ export interface CatalogOption {
   description?: string;
   /** 行业分组名（仅 industries，如「电商与零售」） */
   group?: string;
+  /** 为 true 时出现在向导 S1；每档 group 只标一条，展示名用 group */
+  wizard?: boolean;
 }
 
 /**
@@ -205,7 +207,16 @@ export interface MatchResult {
   reject_summary?: TemplateRejectReason[];
   /** Top-K 里没被选中的候选 */
   alternatives?: MatchAlternative[];
-  /** [P3C 分流] 固定 DAG 无法表达的不定轮次工具编排。 */
+  /**
+   * [P3/P3C 分流] 固定 DAG 适配度。high = 行业对齐且能力覆盖的 hit；
+   * custom / 对不齐一律 low。否决词由 decideBuildPath 另判，不写入本字段。
+   */
+  dag_fit?: 'high' | 'low';
+  /** 模板 industries 是否包含 triage.industry（精确 id，不含行业组推断）。 */
+  industry_aligned?: boolean;
+  /** 向导能力诉求相对模板 capabilities 的缺口。 */
+  capability_coverage?: { desired: string[]; missing: string[] };
+  /** [P3C 分流] 固定 DAG 无法表达的不定轮次工具编排。有值即否决 P3。 */
   needs_multi_turn_tooling?: boolean;
 }
 

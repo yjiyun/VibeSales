@@ -106,6 +106,38 @@ export class CatalogsService implements OnModuleInit {
     return this.bundle.options[key] ?? [];
   }
 
+  /** 向导 S1 用的 7 档行业：每档 group 一条，展示名为 group。细项 id 仍合法，供自由描述归一与 scene 硬过滤。 */
+  wizardIndustryOptions(): CatalogOption[] {
+    return (this.bundle.options.industries ?? [])
+      .filter((o) => o.wizard === true)
+      .map((o) => ({
+        ...o,
+        name: o.group || o.name,
+      }));
+  }
+
+  industryGroup(industryId: string): string | undefined {
+    return this.bundle.options.industries?.find((o) => o.id === industryId)
+      ?.group;
+  }
+
+  /** 选中的 industry id 是否覆盖该 scene（含同 group 细项，如 cluster 点选 vs beauty 装机）。 */
+  sceneCoversIndustry(
+    scene: Pick<SceneCatalogItem, 'industries'>,
+    industryId: string,
+  ): boolean {
+    const ids = scene.industries ?? [];
+    if (ids.includes(industryId)) return true;
+    const group = this.industryGroup(industryId);
+    if (!group) return false;
+    const members = new Set(
+      (this.bundle.options.industries ?? [])
+        .filter((o) => o.group === group)
+        .map((o) => o.id),
+    );
+    return ids.some((id) => members.has(id));
+  }
+
   /** 行业选项按 group 分组（保持 yaml 顺序）。 */
   industriesGrouped(): Array<{ group: string; options: CatalogOption[] }> {
     const opts = this.bundle.options.industries ?? [];
@@ -270,6 +302,7 @@ export class CatalogsService implements OnModuleInit {
           name: String(it.name ?? id),
           description: it.description ? String(it.description) : undefined,
           group: it.group ? String(it.group) : undefined,
+          wizard: it.wizard === true,
         } as CatalogOption;
       })
       .filter((o): o is CatalogOption => o !== null);

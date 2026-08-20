@@ -37,7 +37,7 @@ render_dir="$(mktemp -d -t chatflows-agentteams.XXXXXX)"
 while IFS= read -r rel; do
   source_file="$(dirname "$manifest")/$rel"
   rendered_file="$render_dir/$(basename "$rel")"
-  node "$root_dir/scripts/render-agentteams-resource.js" "$source_file" "$rendered_file" "$root_dir" "$base_url"
+  node "$root_dir/scripts/render-agentteams-resource.js" "$source_file" "$rendered_file" "$root_dir" "$base_url" "${HIGRESS_CONSUMER_TOKEN:-}"
   if grep -qE 'higress\.(example|local)' "$rendered_file"; then
     echo "unresolved Higress placeholder in $rel" >&2
     exit 5

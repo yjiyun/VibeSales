@@ -1,3 +1,0 @@
-package com.yjiyun.chatflows.runtime.blueprint;
-import com.fasterxml.jackson.databind.*; import java.io.IOException; import java.nio.file.*;
-public final class BlueprintJson { private static final ObjectMapper JSON=new ObjectMapper().configure(DeserializationFeature.FAIL_ON_UNKNOWN_PROPERTIES,false); private BlueprintJson(){} public static AgentBlueprint read(Path path)throws IOException{return JSON.readValue(Files.readString(path),AgentBlueprint.class);} public static AgentBlueprint read(byte[] bytes)throws IOException{return JSON.readValue(bytes,AgentBlueprint.class);} public static AgentBlueprint read(String text)throws IOException{return JSON.readValue(text,AgentBlueprint.class);} }

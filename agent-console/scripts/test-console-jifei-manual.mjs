@@ -3,7 +3,7 @@
  *
  * 对齐 docs/agentteams/测试用例/test2-jifei-rag-manual.md：
  * 关 LLM 接待员 → S1–S4 → 点下「开始生成（local|platform）」→ 等到 run 已创建即停。
- * 不等「确认发布」、不去试聊、不打开编排看板。
+ * 不等「确认发布」、不去沙盒试聊、不打开编排看板。
  *
  * 起停见 scripts/run-console-jifei-manual.sh。
  */
@@ -167,6 +167,7 @@ try {
   await industryCard.getByText('你所在的行业是什么？').waitFor({ timeout: 20_000 });
   await industryCard.locator('.wz-opt', { hasText: s1.label }).first().click();
   await shot(page, 'wizard-s1-industry', industryCard);
+  await industryCard.getByRole('button', { name: '确认' }).click();
   mark('s1-industry');
 
   const s2 = step('S2_GOALS');
@@ -181,7 +182,7 @@ try {
     `业务目标应勾中 ${s2.labels.length} 项`,
   );
   await shot(page, 'wizard-s2-goals', goalsCard);
-  await goalsCard.getByRole('button', { name: '提交' }).click();
+  await goalsCard.getByRole('button', { name: '确认' }).click();
   mark('s2-goals');
 
   const s3 = step('S3_BRIEF');
@@ -219,9 +220,9 @@ try {
   );
   mark('gate-pass');
 
-  const buildButton = result.getByRole('button', { name: /开始生成（(local|platform)）/ });
+  const buildButton = result.getByRole('button', { name: /开始构建（(local|platform)）/ });
   await buildButton.waitFor();
-  assert.equal(await buildButton.isEnabled(), true, '开始生成 应可点');
+  assert.equal(await buildButton.isEnabled(), true, '开始构建 应可点');
   const buttonLabel = (await buildButton.innerText()).trim();
   await shot(page, 'wizard-before-generate', result);
   await buildButton.click();

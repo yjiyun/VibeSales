@@ -4,8 +4,8 @@
  *
  * 选项一律来自服务端 `WizardQuestion`（行业/业务目标取自 catalogs 词表），
  * 前端不内置任何业务枚举。三种输入形态：
- * - single：单选（可分组展示，如行业按 group 分簇）
- * - multi ：多选（业务目标）
+ * - single：单选（行业 S1 为竖排单选钮 + 确认；CTA 等仍点选即提交）
+ * - multi ：多选（业务目标：同款竖排列表，方框多选 + 确认）
  * - text  ：自由文本题干 + 快捷回复（正文输入交给底部 XSender）
  *
  * 历史卡片传 disabled=true，只做只读回显。
@@ -37,14 +37,26 @@ watch(
   },
 );
 
-/** 有分组就按分组渲染，否则平铺 */
+/** 有分组就按分组渲染；行业 S1 的「分类」标题要隐藏，只保留选项本身。 */
 const groups = computed(() => {
   const q = props.question;
+  if (q.key === 'industry') {
+    const opts = q.groups?.length
+      ? q.groups.flatMap((g) => g.options ?? [])
+      : (q.options ?? []);
+    return [{ group: '', options: opts }];
+  }
   if (q.groups?.length) return q.groups;
   return [{ group: '', options: q.options ?? [] }];
 });
 
 const locked = computed(() => props.loading || props.disabled);
+
+/** 行业 / 业务目标：竖排选择列表（单选圆钮 / 多选方框） */
+const isChoiceList = computed(
+  () => props.question.key === 'industry' || props.question.input === 'multi',
+);
+const isMulti = computed(() => props.question.input === 'multi');
 
 const canSubmit = computed(() => {
   if (locked.value) return false;
@@ -54,6 +66,22 @@ const canSubmit = computed(() => {
   return false;
 });
 
+const hasChoice = computed(() =>
+  isMulti.value ? checked.value.length > 0 : !!picked.value,
+);
+
+const showActions = computed(() => {
+  const q = props.question;
+  if (isChoiceList.value) return true;
+  if (q.input === 'text' && (q.template_text || q.template_on_demand)) return true;
+  if ((q.quick_replies ?? []).length) return true;
+  return !!props.disabled;
+});
+
+function isActive(id) {
+  return isMulti.value ? checked.value.includes(id) : picked.value === id;
+}
+
 function toggleMulti(id) {
   if (locked.value) return;
   const i = checked.value.indexOf(id);
@@ -61,7 +89,23 @@ function toggleMulti(id) {
   else checked.value.push(id);
 }
 
-/** 单选点击即提交：少一次点击，向导更顺 */
+function selectSingle(id) {
+  if (locked.value) return;
+  picked.value = id;
+}
+
+function pickChoice(id) {
+  if (isMulti.value) toggleMulti(id);
+  else selectSingle(id);
+}
+
+function clearChoices() {
+  if (locked.value) return;
+  picked.value = '';
+  checked.value = [];
+}
+
+/** CTA 等：点击即提交 */
 function pickSingle(id) {
   if (locked.value) return;
   picked.value = id;
@@ -97,12 +141,51 @@ function useTemplate() {
 </script>
 
 <template>
-  <div class="wz-question" :class="{ 'is-disabled': disabled }">
+  <div
+    class="wz-question"
+    :class="{ 'is-disabled': disabled, 'is-choice-list': isChoiceList }"
+  >
     <div class="wz-question__title">{{ question.title }}</div>
-    <div v-if="question.hint" class="wz-question__hint">{{ question.hint }}</div>
+    <div
+      v-if="question.hint"
+      class="wz-question__hint"
+      :class="{ 'is-quote': isChoiceList }"
+    >
+      {{ question.hint }}
+    </div>
 
-    <!-- 单选 / 多选 -->
-    <template v-if="question.input !== 'text'">
+    <!-- 行业 / 业务目标：竖排选择列表 -->
+    <template v-if="isChoiceList">
+      <div v-for="g in groups" :key="g.group || 'all'" class="wz-optgroup">
+        <div v-if="g.group" class="wz-optgroup__label">{{ g.group }}</div>
+        <div
+          class="wz-radio-list"
+          :role="isMulti ? 'group' : 'radiogroup'"
+        >
+          <button
+            v-for="o in g.options"
+            :key="o.id"
+            type="button"
+            class="wz-opt wz-radio-opt"
+            :class="{ 'is-active': isActive(o.id) }"
+            :role="isMulti ? 'checkbox' : 'radio'"
+            :aria-checked="isActive(o.id)"
+            :disabled="locked"
+            @click="pickChoice(o.id)"
+          >
+            <span
+              class="wz-radio-opt__dot"
+              :class="{ 'is-check': isMulti }"
+              aria-hidden="true"
+            />
+            <span class="wz-radio-opt__name">{{ o.name }}</span>
+          </button>
+        </div>
+      </div>
+    </template>
+
+    <!-- CTA 等：选项卡片，点击即提交 -->
+    <template v-else-if="question.input !== 'text'">
       <div v-for="g in groups" :key="g.group || 'all'" class="wz-optgroup">
         <div v-if="g.group" class="wz-optgroup__label">{{ g.group }}</div>
         <div class="wz-options">
@@ -111,16 +194,9 @@ function useTemplate() {
             :key="o.id"
             type="button"
             class="wz-opt"
-            :class="{
-              'is-active':
-                question.input === 'single'
-                  ? picked === o.id
-                  : checked.includes(o.id),
-            }"
+            :class="{ 'is-active': picked === o.id }"
             :disabled="locked"
-            @click="
-              question.input === 'single' ? pickSingle(o.id) : toggleMulti(o.id)
-            "
+            @click="pickSingle(o.id)"
           >
             <div class="wz-opt__name">{{ o.name }}</div>
             <div v-if="o.description" class="wz-opt__desc">
@@ -139,7 +215,7 @@ function useTemplate() {
       </ul>
     </template>
 
-    <div class="wz-actions">
+    <div v-if="showActions" class="wz-actions" :class="{ 'is-choice': isChoiceList }">
       <el-button
         v-if="
           question.input === 'text' &&
@@ -153,32 +229,33 @@ function useTemplate() {
       >
         {{ templateLoading ? '生成中…' : '使用模板' }}
       </el-button>
-      <el-button
-        v-if="question.input === 'multi'"
-        type="primary"
-        :loading="loading"
-        :disabled="!canSubmit"
-        @click="submit"
-      >
-        提交
-      </el-button>
-      <el-button
-        v-for="qr in question.quick_replies ?? []"
-        :key="qr.value"
-        :disabled="locked"
-        text
-        bg
-        @click="quick(qr.value)"
-      >
-        {{ qr.label }}
-      </el-button>
-      <span
-        v-if="question.input === 'single' && !disabled"
-        class="wz-question__hint"
-        style="margin: 0"
-      >
-        点击选项即可继续
-      </span>
+      <template v-if="!isChoiceList">
+        <el-button
+          v-for="qr in question.quick_replies ?? []"
+          :key="qr.value"
+          class="wz-actions__skip"
+          :disabled="locked"
+          text
+          bg
+          @click="quick(qr.value)"
+        >
+          {{ qr.label }}
+        </el-button>
+      </template>
+      <template v-if="isChoiceList && !disabled">
+        <el-button text :disabled="locked || !hasChoice" @click="clearChoices">
+          清空
+        </el-button>
+        <el-button
+          type="primary"
+          round
+          :loading="loading"
+          :disabled="!canSubmit"
+          @click="submit"
+        >
+          确认
+        </el-button>
+      </template>
       <span v-if="disabled" class="wz-question__hint" style="margin: 0">
         已回答
       </span>

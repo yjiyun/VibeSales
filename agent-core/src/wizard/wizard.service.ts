@@ -40,6 +40,9 @@ import {
 /** @deprecated 请用 P1_COARSE_READY_THRESHOLD；保留别名避免外部引用断裂 */
 export { P1_COARSE_READY_THRESHOLD as V0_CONFIDENCE_THRESHOLD };
 
+/** 词表内哨兵：行业/角色无法唯一落到装机 scene 时仍可 PASS 并默认走 P3C。 */
+export const UNMAPPED_SCENE_ID = 'unmapped';
+
 export interface WizardComputation {
   next_ask: NextAsk | null;
   /** 粗补达标（可进 P2）；字段名历史兼容 */
@@ -242,28 +245,29 @@ export class WizardService {
 
   /**
    * [P1] 由已收集粗槽确定性推断 scene_id（免 LLM）：
-   * 1) agent_family===role 且 industries 含 industry
-   * 2) 仅 industries 含 industry（新向导常从业务目标推出 sales，仍应对齐行业模板）
-   * 3) 仅 agent_family===role
+   * 1) agent_family===role 且 industries 覆盖 industry
+   * 2) 仅 industries 覆盖 industry，且命中恰好一个 scene（edu 挂招聘/留学时不猜）
+   * 不再按 role 回退到第一个客服 scene（会把汽车误映射成美妆）。
+   * 都不中 → undefined，由 buildTriageFromUxCollect 写成 unmapped。
    */
   inferSceneId(collected: Record<string, unknown>): string | undefined {
     const role = this.str(collected.role);
     const industry = this.str(collected.industry);
-    const scenes = this.catalogs.get().scenes;
+    const scenes = this.catalogs
+      .get()
+      .scenes.filter(
+        (s) => s.id !== UNMAPPED_SCENE_ID && s.status !== 'deprecated',
+      );
 
-    const exact = scenes.find(
-      (s) =>
-        s.agent_family === role && (s.industries ?? []).includes(industry),
-    );
+    const covers = (s: { industries?: string[]; agent_family?: string }) =>
+      this.catalogs.sceneCoversIndustry(s, industry);
+
+    const exact = scenes.find((s) => s.agent_family === role && covers(s));
     if (exact) return exact.id;
 
-    const byIndustry = scenes.find((s) =>
-      (s.industries ?? []).includes(industry),
-    );
-    if (byIndustry) return byIndustry.id;
-
-    const byRole = scenes.find((s) => s.agent_family === role);
-    return byRole?.id;
+    const byIndustry = scenes.filter((s) => covers(s));
+    if (byIndustry.length === 1) return byIndustry[0].id;
+    return undefined;
   }
 
   /** [P1] 把 next_ask 渲染成可读追问（DEMO 确定性拼装）。 */
@@ -291,8 +295,9 @@ export class WizardService {
   }
 
   /**
-   * [A1] P3/P3b/P3C 唯一分流真源。Worker/Leader 只能消费本结果，不得自裁。
-   * P3C 信号优先；其后 hit 走 P3，custom 的固定 DAG 需求走 P3b。
+   * [A1] P3/P3B/P3C 唯一分流真源。Worker/Leader 只能消费本结果，不得自裁。
+   * 默认 P3C；仅行业对齐且能力覆盖的 hit（dag_fit=high）且无否决时走 P3。
+   * 记忆 / 自演进 / 多轮工具信号是否决 P3，不是 P3C 入场券。P3B 不由默认路由返回。
    */
   decideBuildPath(triage: Triage, match: MatchResult): BuildPath {
     if (
@@ -302,8 +307,8 @@ export class WizardService {
     ) {
       return 'P3C';
     }
-    if (match.action === 'hit') return 'P3';
-    return 'P3B';
+    if (match.action === 'hit' && match.dag_fit === 'high') return 'P3';
+    return 'P3C';
   }
 
   // ==========================================================================
@@ -400,7 +405,7 @@ export class WizardService {
   }
 
   /**
-   * 新向导收集结果 → Triage（尽量映射 scene；映射不到则空 scene + risk_flags）。
+   * 新向导收集结果 → Triage（尽量映射 scene；映射不到则 unmapped + risk_flags，仍可 PASS）。
    */
   buildTriageFromUxCollect(
     channel: string,
@@ -421,21 +426,21 @@ export class WizardService {
       role = 'hr_recruit';
     }
 
-    const scene_id =
-      this.inferSceneId({
-        industry: collected.industry,
-        role,
-      }) ?? '';
+    const inferred = this.inferSceneId({
+      industry: collected.industry,
+      role,
+    });
+    const scene_id = inferred || UNMAPPED_SCENE_ID;
 
     const risk_flags: string[] = [];
-    if (!scene_id) risk_flags.push('no_template_scene');
+    if (scene_id === UNMAPPED_SCENE_ID) risk_flags.push('no_template_scene');
 
     return {
       scene_id,
       agent_family: role,
       channel,
       industry: collected.industry,
-      confidence: scene_id ? 0.88 : 0.75,
+      confidence: scene_id !== UNMAPPED_SCENE_ID ? 0.88 : 0.75,
       reason: `向导 UX：行业=${collected.industry}；目标=${(collected.business_goals ?? []).join(',')}`,
       known_slots: {
         industry: collected.industry,
@@ -483,14 +488,8 @@ export class WizardService {
   }
 
   /**
-   * 向导收尾：收集结果 → Triage → 闸门 → Phase1Result。
-   *
-   * 这是 P1 的**唯一收口**，CLI（`p1-wizard`）与 Web（`POST /api/wizard/.../answer`）
-   * 都走这里，因此两端产出的 JSON 结构与闸门判定完全一致。
-   * 映射不到装机模板场景时不报错，降级为 CUSTOM 并给出可读说明。
-   */
-  /**
-   * [A1] 从业务简述/细补文本规则抽取 P3C 分流信号（无 LLM）。
+   * [A1] 从业务简述/细补文本规则抽取「否决 P3」信号（无 LLM）。
+   * 命中则不得走模板改写（P3），默认仍是 P3C；不是 P3C 入场券。
    * 显式入参与文本推断取 OR；闸门后会再次写回，避免 Object.assign 语义歧义。
    */
   inferP3cSignals(text: string): {
@@ -524,6 +523,13 @@ export class WizardService {
     return parts.join('\n');
   }
 
+  /**
+   * 向导收尾：收集结果 → Triage → 闸门 → Phase1Result。
+   *
+   * 这是 P1 的**唯一收口**，CLI（`p1-wizard`）与 Web（`POST /api/wizard/.../answer`）
+   * 都走这里，因此两端产出的 JSON 结构与闸门判定完全一致。
+   * 映射不到装机模板场景时写入 unmapped 并仍可 PASS（默认 P3C），不再因无 scene 藏「开始生成」。
+   */
   buildPhase1Result(input: {
     clientCode: string;
     requestId?: string;
@@ -588,10 +594,11 @@ export class WizardService {
   private coarseExamples(collected: Record<string, unknown>): string[] {
     const industry = this.str(collected.industry);
     const scenes = this.catalogs.get().scenes;
+    const mappable = scenes.filter((s) => s.id !== UNMAPPED_SCENE_ID);
     const pool = industry
-      ? scenes.filter((s) => (s.industries ?? []).includes(industry))
-      : scenes;
-    const src = (pool.length > 0 ? pool : scenes).flatMap(
+      ? mappable.filter((s) => this.catalogs.sceneCoversIndustry(s, industry))
+      : mappable;
+    const src = (pool.length > 0 ? pool : mappable).flatMap(
       (s) => s.typical_prompts ?? [],
     );
     return src.slice(0, 3);

@@ -111,6 +111,18 @@ preflight_runtime() {
   probe_tcp_url "${DATABASE_URL#jdbc:}" PostgreSQL 5432
   probe_tcp_url "$REDIS_URL" Redis 6379
 }
+bridge_runtime_model_env() {
+  # runtime 底下混用了两套配置名：AgentTeams 这一层主写 RUNTIME_*，
+  # salesagent 子应用实际读取 AGENT_MODEL_*。这里做一次兼容桥接，
+  # 避免 env 已配置了 Higress consumer token，但子应用仍报缺 AGENT_MODEL_API_KEY。
+  export AGENT_MODEL_BASE_URL="${AGENT_MODEL_BASE_URL:-${RUNTIME_LLM_BASE_URL:-}}"
+  export AGENT_MODEL_API_KEY="${AGENT_MODEL_API_KEY:-${RUNTIME_LLM_TOKEN:-}}"
+  if [[ -z "${AGENT_MODEL_NAME:-}" && -n "${RUNTIME_MODEL:-}" ]]; then
+    export AGENT_MODEL_NAME="${RUNTIME_MODEL#dashscope:}"
+  fi
+  [[ -n "${AGENT_MODEL_BASE_URL:-}" ]] || { echo "AGENT_MODEL_BASE_URL/RUNTIME_LLM_BASE_URL is required" >&2; exit 1; }
+  [[ -n "${AGENT_MODEL_API_KEY:-}" ]] || { echo "AGENT_MODEL_API_KEY/RUNTIME_LLM_TOKEN is required" >&2; exit 1; }
+}
 run_nest() {
   preflight_nest
   # Nest P4 dry-run/ingest 读 AGENT_RUNTIME_*；env 文件主写的是 RUNTIME_AUTH_TOKEN / RUNTIME_ADMIN_TOKEN。
@@ -134,7 +146,7 @@ configure_toolface() {
   node "$root_dir/scripts/configure-agentteams-worker-mcp.js"
 }
 run_manager() { preflight_manager; [[ "${AGENTTEAMS_PREFLIGHT_ONLY:-0}" == 1 ]] && return; configure_toolface; cd "$root_dir/agent-manager"; exec ./run.sh serve; }
-run_runtime() { preflight_runtime; [[ "${AGENTTEAMS_PREFLIGHT_ONLY:-0}" == 1 ]] && return; cd "$root_dir/agent-runtime"; exec ./run.sh; }
+run_runtime() { preflight_runtime; bridge_runtime_model_env; [[ "${AGENTTEAMS_PREFLIGHT_ONLY:-0}" == 1 ]] && return; cd "$root_dir/agent-runtime"; exec ./run.sh; }
 run_console() { [[ "${AGENTTEAMS_PREFLIGHT_ONLY:-0}" == 1 ]] && return; cd "$root_dir/agent-console"; exec npm run dev; }
 # ManagerApplication.checkHttp() 启动时探测一次 Nest /api/v1/pipeline/health，不重试；
 # ts-node 编译+起 Nest 比 JVM 慢，all 模式并行起四个进程时 Manager 常常探测过早拿到

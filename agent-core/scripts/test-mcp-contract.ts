@@ -3,12 +3,18 @@ import { NestFactory } from '@nestjs/core';
 import { AppMcpModule } from '../src/app-mcp.module';
 import { agentForMcpServer, McpController } from '../src/mcp/mcp.controller';
 import { agentLoopRoaHeaders, toAgentLoopEnvelope } from '../src/common/agentloop-sink';
+import { TraceService } from '../src/common/trace.service';
+import { TraceRecord, TraceSink } from '../src/common/trace-sink';
 import { randomUUID } from 'crypto';
 
 async function main() {
   process.env.MCP_SERVER_TOKEN = 'mcp-contract-token-0123456789';
   const app = await NestFactory.createApplicationContext(AppMcpModule, { logger: false });
   const controller = app.get(McpController);
+  // 捕获所有 trace 记录，验证 MCP 工具内部的二级打点确实上报（controller 的 tool.call/result 之外的阶段内 span）。
+  const captured: TraceRecord[] = [];
+  const capture: TraceSink = { name: 'capture', threshold: 'verbose', emit: (rec) => { captured.push(rec); } };
+  app.get(TraceService).addSink(capture);
   let denied=false;try{await controller.rpc('chatflows-p1',{jsonrpc:'2.0',id:0,method:'initialize'},{});}catch(error:any){denied=error?.getStatus?.()===401;}
   if(!denied)throw new Error('MCP must reject missing Bearer token');
   const auth={authorization:'Bearer '+process.env.MCP_SERVER_TOKEN};
@@ -29,6 +35,22 @@ async function main() {
   const called: any = await controller.rpc('chatflows-p1', { jsonrpc: '2.0', id: 3, method: 'tools/call', params: { name: 'ask', arguments: { triage, _ctx: { run_id: runId, client_code: 'acme', request_id: 'req-1', traceparent: '00-0123456789abcdef0123456789abcdef-0123456789abcdef-01' } } } }, auth);
   if (called.error || called.result.isError) throw new Error('MCP tools/call failed');
   if(!/^[0-9a-f-]{36}$/.test(called.result._meta?.request_id)||called.result._meta.request_id==='req-1')throw new Error('Nest did not generate/echo authoritative request_id');
+  // 二级打点：P1.ask 内部应打出 gate.evaluated（scope=P1），带 run_id/phase/tool，且区别于 controller 的 MCP.tool.call。
+  const p1Gate=captured.find(r=>r.scope==='P1'&&r.event==='gate.evaluated');
+  if(!p1Gate)throw new Error('P1 ask did not emit gate.evaluated sub-step span');
+  const gd=p1Gate.data as Record<string,unknown>;
+  if(gd.run_id!==runId||gd.phase!=='P1'||gd.tool!=='ask'||!('gate' in gd))throw new Error('P1 gate.evaluated span missing run_id/phase/tool/gate: '+JSON.stringify(gd));
+  const p1ToolCall=captured.find(r=>r.scope==='MCP'&&r.event==='tool.call');
+  if(!p1ToolCall)throw new Error('controller-level MCP.tool.call span missing (entry span regressed)');
+  // 工具节点面板输入：tool.call 带 tool_input（含 triage），且经 sanitizeToolIo 去掉 _ctx；经信封映射到 gen_ai.input.messages。
+  const tcData=p1ToolCall.data as Record<string,any>;
+  if(!tcData.tool_input||'_ctx' in tcData.tool_input||JSON.stringify(tcData.tool_input.triage?.scene_id)!=='"beauty_wecom_cs"')throw new Error('MCP.tool.call missing sanitized tool_input: '+JSON.stringify(tcData.tool_input));
+  const p1CallEnv=toAgentLoopEnvelope(p1ToolCall);
+  const p1InMsg=p1CallEnv.attributes['gen_ai.input.messages'];
+  if(typeof p1InMsg!=='string'||JSON.parse(p1InMsg)[0].role!=='tool'||!p1InMsg.includes('beauty_wecom_cs'))throw new Error('tool.call did not map to gen_ai.input.messages: '+p1InMsg);
+  const p1ToolResult=captured.find(r=>r.scope==='MCP'&&r.event==='tool.result');
+  const p1ResEnv=p1ToolResult?toAgentLoopEnvelope(p1ToolResult):undefined;
+  if(!p1ResEnv||typeof p1ResEnv.attributes['gen_ai.output.messages']!=='string')throw new Error('tool.result did not map to gen_ai.output.messages');
   const missing: any = await controller.rpc('chatflows-p1', { jsonrpc: '2.0', id: 4, method: 'tools/call', params: { name: 'ask', arguments: { triage } } }, auth);
   if (!missing.error?.message.includes('_ctx.run_id')) throw new Error('MCP must reject missing run_id');
   const nonObject:any=await controller.rpc('chatflows-p1',{jsonrpc:'2.0',id:40,method:'tools/call',params:{name:'ask',arguments:{triage:'not-json',_ctx:{run_id:randomUUID(),client_code:'acme'}}}},auth);

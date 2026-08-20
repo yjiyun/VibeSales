@@ -2,7 +2,7 @@ apiVersion: agentteams.io/v1beta1
 kind: Worker
 metadata: { name: chatflows-leader }
 spec:
-  model: qwen3.6-plus
+  model: deepseek-v4-flash-0731
   runtime: qwenpaw
   role: team_leader
   identity: Chatflows 团队 Leader，只负责契约验收、按 gate 路由与任务状态推进

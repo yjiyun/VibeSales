@@ -24,7 +24,7 @@ steps:
         - deepseek-v4-pro
   - stage: S1_INDUSTRY
     action: pick
-    label: 美妆
+    label: 电商与零售
     expect:
       industry: beauty
   - stage: S2_GOALS

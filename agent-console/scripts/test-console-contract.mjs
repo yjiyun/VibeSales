@@ -58,7 +58,14 @@ try {
     removeItem: key => storage.delete(key),
   };
   globalThis.fetch = (input, init) => nativeFetch(typeof input === 'string' && input.startsWith('/') ? base + input : input, init);
-  const { auth } = await import('../src/shared/auth.js');
+  const { auth, restoreEnvAuth, saveAuth } = await import('../src/shared/auth.js');
+  if (!storage.get('agent-console.boot-fingerprint')) throw new Error('boot fingerprint missing after env hydrate');
+  const envWizard = auth.wizardToken;
+  auth.wizardToken = 'drawer-override-token';
+  saveAuth();
+  if (storage.get('agent-console.wizard-token') !== 'drawer-override-token') throw new Error('saveAuth did not persist drawer override');
+  restoreEnvAuth();
+  if (auth.wizardToken !== envWizard) throw new Error('restoreEnvAuth did not restore this boot env');
   auth.wizardToken = 'wizard-contract-token'; auth.managerToken = 'manager-contract-token';
   auth.pipelineToken = 'pipeline-contract-token'; auth.runtimeToken = 'runtime-contract-token';
   auth.role = 'orchestrator'; auth.actor = '@contract:local';
@@ -91,6 +98,7 @@ try {
   const api = { managerApi: { create: async body => (calls.push(['manager', body]), { run_id: 'platform-run' }) }, pipelineApi: { start: async body => (calls.push(['pipeline', body]), { run_id: 'local-run' }) } };
   await createBuildRun(phase1, 'platform', api); await createBuildRun(phase1, 'local', api);
   if (calls[0][0] !== 'manager' || JSON.parse(calls[0][1].spec).phase1_result.client_code !== 'acme') throw new Error('platform CTA did not forward authoritative Phase1Result');
+  if (calls[0][1].room_id) throw new Error('platform CTA should omit room_id when VITE_LEADER_ROOM_ID is empty');
   if (calls[1][0] !== 'pipeline' || calls[1][1].industry_id !== 'beauty' || calls[1][1].goal_ids[0] !== 'faq_deflect' || calls[1][1].needs_long_term_memory !== true) throw new Error('local CTA mapping mismatch');
   let rejected = false; try { await createBuildRun({ ...phase1, gate: 'ASK' }, 'platform', api); } catch { rejected = true; }
   if (!rejected) throw new Error('CTA accepted non-PASS Phase1Result');
@@ -117,8 +125,34 @@ try {
     { body: '1. `1b4f918e` (acme_agri) — ⏸️ 等待 Human 审批 (approval_id=699838ba-409e-4802-8aea-7b0ceaabbafa)' },
   ], run);
   if (approvalId !== '699838ba-409e-4802-8aea-7b0ceaabbafa') throw new Error('informal approval_id was not extracted: ' + approvalId);
+  // Leader 的口头汇报只能当线索（approvalGuess），不能直接冒充权威 status/approvalId——
+  // 之前版本会把 status 强改成 WAITING_HUMAN，导致 Leader 编造消息就能点亮发布按钮
+  // （实测事故：run aef1e08b，approval_id 本身也是编的），409 之后还会死循环。
   const gated = applyApprovalGate({ runId: run, status: 'DISPATCHED', approvalId: '' }, approvalId);
-  if (gated.status !== 'WAITING_HUMAN' || gated.approvalId !== approvalId) throw new Error('approval gate was not applied to wizard snapshot');
+  if (gated.status !== 'DISPATCHED' || gated.approvalId || gated.approvalGuess !== approvalId) {
+    throw new Error('approval gate must only record a guess, not fabricate authoritative status/approvalId');
+  }
+  // 权威源已经给出 approvalId 时，聊天文本的猜测不应覆盖它。
+  const already = applyApprovalGate({ runId: run, status: 'WAITING_HUMAN', approvalId: 'real-1' }, approvalId);
+  if (already.approvalId !== 'real-1' || already.approvalGuess) throw new Error('approval gate must not override an authoritative approvalId');
+  const { mergePlatformSnapshot, publicationFromSnapshot } = await import('../src/shared/run-snapshot.js?gate2=' + Date.now());
+  const merged = mergePlatformSnapshot(
+    { run_id: 'r-succ', status: 'DISPATCHED', pending_approvals: [], artifacts: [] },
+    {
+      run: { run_id: 'r-succ', status: 'SUCCEEDED', current_phase: 'P4', build_path: 'P3C', client_code: 'acme_beauty' },
+      artifacts: [
+        { kind: 'blueprint', payload: { runtimeAgentId: 'beauty_wecom_cs-acme_beauty', meta: { scenarios: ['beauty_wecom_cs'] }, guidance: { role: '客服' } } },
+        { kind: 'import_result', payload: { binding: { client_code: 'acme_beauty', runtime_agent_id: 'beauty_wecom_cs-acme_beauty' } } },
+      ],
+    },
+  );
+  if (merged.status !== 'SUCCEEDED' || merged.managerStatus !== 'DISPATCHED' || merged.approvalId) {
+    throw new Error('platform merge must prefer Nest SUCCEEDED over manager DISPATCHED: ' + JSON.stringify(merged));
+  }
+  const pub = publicationFromSnapshot(merged);
+  if (pub.clientCode !== 'acme_beauty' || pub.runtimeAgentId !== 'beauty_wecom_cs-acme_beauty') {
+    throw new Error('publicationFromSnapshot missed import_result binding: ' + JSON.stringify(pub));
+  }
 
   const events = [];
   await consumeSse(new Response('event: message\r\ndata: {"delta":"ok"}\r\n\r\nevent: done\r\ndata: {}\r\n\r\n'), (event, data) => events.push([event, data]));

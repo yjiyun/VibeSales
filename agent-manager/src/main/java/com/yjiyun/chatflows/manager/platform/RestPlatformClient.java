@@ -9,7 +9,9 @@ public final class RestPlatformClient implements PlatformClient {
  public void apply(String kind,String name,String yaml)throws IOException,InterruptedException{
   String path=PATHS.get(kind);if(path==null)throw new IllegalArgumentException("unsupported kind: "+kind);ObjectNode body=requestBody(kind,name,yaml);String collection="/api/v1/"+path,resource=collection+"/"+name;
   HttpResponse<String> existing=send("GET",resource,null);HttpResponse<String> result;
-  if(existing.statusCode()/100==2){if(kind.equals("Human"))return;result=send("PUT",resource,JSON.writeValueAsString(body));}
+  // Team PUT 会按 workerMembers 重同步 Matrix 房间成员，把编排器用的 @manager 踢成 leave，
+  // 随后 join/send 变成 403（invite-only / membership leave）。Human 同理只声明一次。
+  if(existing.statusCode()/100==2){if(kind.equals("Human")||kind.equals("Team"))return;result=send("PUT",resource,JSON.writeValueAsString(body));}
   else if(existing.statusCode()==404)result=send("POST",collection,JSON.writeValueAsString(body));
   else throw new IOException("controller lookup failed: "+existing.statusCode()+" "+existing.body());
   if(result.statusCode()/100!=2)throw new IOException("controller rejected "+kind+" "+name+": "+result.statusCode()+" "+result.body());

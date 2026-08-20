@@ -9,6 +9,15 @@
 **/.env
 **/.env.*
 !**/.env.example
+# Local Dockerfiles under deploy/local/ COPY prebuilt host artifacts.
+# Production agent-core/Dockerfile still COPY src + npm ci + npm run build;
+# these exceptions only enlarge build context and are not COPYed into server images.
+!agent-console/dist
+!agent-console/dist/**
+!agent-core/dist
+!agent-core/dist/**
+!agent-core/node_modules
+!agent-core/node_modules/**
 .claude
 .workbuddy
 tmp

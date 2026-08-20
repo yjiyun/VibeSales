@@ -1,0 +1,30 @@
+{
+  "_说明": "租户作用域 -> Blueprint 资源路径的索引。为什么要显式索引而不扫目录：classpath 资源在打成 jar 后无法当目录遍历（jar: URL 不支持 listFiles），显式索引对 target/classes 和 java -jar 两种运行方式都成立。",
+  "_路由说明": "路由键是 clientCode + cluster 两级：先按两者精确命中该集群专属蓝图；命中不到才降级到该 clientCode 下 cluster 为空的默认蓝图。每个 clientCode 至多一条空 cluster 条目，否则降级目标不确定。",
+  "entries": [
+    {
+      "_说明": "本轮模拟的测试租户与集群：clientCode=yjiyuncom, cluster=test。精确命中路径。",
+      "clientCode": "yjiyuncom",
+      "cluster": "test",
+      "path": "blueprints/yjiyuncom.test.json"
+    },
+    {
+      "_说明": "multi_stage 样例蓝图：clientCode=yjiyuncom, cluster=test。当前刻意与工作台默认 test 集群对齐，便于在测试页直接选择并验证 multi_stage 资产。",
+      "clientCode": "yjiyuncom",
+      "cluster": "test",
+      "path": "blueprints/yjiyuncom.multistage.json"
+    },
+    {
+      "_说明": "同租户默认蓝图，承担两种降级：不带 cluster（tenant_default）与带了没有专属蓝图的 cluster（cluster_fallback）。",
+      "clientCode": "yjiyuncom",
+      "cluster": "",
+      "path": "blueprints/yjiyuncom.default.json"
+    },
+    {
+      "_说明": "另一个租户，验证「换 clientCode 就换蓝图」。",
+      "clientCode": "hanmei_apparel",
+      "cluster": "",
+      "path": "blueprints/hanmei_apparel.default.json"
+    }
+  ]
+}

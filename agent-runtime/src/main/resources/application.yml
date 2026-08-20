@@ -1,0 +1,47 @@
+# 正式项目的运行配置骨架。
+# 当前先集中声明模型、运行时接口、知识库等基础配置项，
+# 让 P1 最小闭环阶段的代码和后续真实接入共用同一份配置入口。
+app:
+  name: sales-customer-agent
+  stage: p0-bootstrap
+  workspace-dir: ${AGENT_WORKSPACE_DIR:.agentscope/workspace}
+
+model:
+  name: ${AGENT_MODEL_NAME:deepseek-v4-flash-0731}
+  base-url: ${AGENT_MODEL_BASE_URL:https://token-plan.cn-beijing.maas.aliyuncs.com/compatible-mode/v1}
+
+runtime:
+  api-base-url: ${AGENT_RUNTIME_API_BASE_URL:}
+  api-token: ${AGENT_RUNTIME_API_TOKEN:}
+  tenant-id-resolver: ${AGENT_TENANT_ID_RESOLVER:}
+
+blueprint:
+  source: ${AGENT_BLUEPRINT_SOURCE:classpath}
+  remote:
+    enabled: ${AGENT_BLUEPRINT_REMOTE_ENABLED:false}
+    base-url: ${AGENT_BLUEPRINT_REMOTE_BASE_URL:}
+    api-token: ${AGENT_BLUEPRINT_REMOTE_API_TOKEN:}
+    path: ${AGENT_BLUEPRINT_REMOTE_PATH:/api/v1/blueprints/published}
+    connect-timeout-ms: ${AGENT_BLUEPRINT_REMOTE_CONNECT_TIMEOUT_MS:3000}
+    read-timeout-ms: ${AGENT_BLUEPRINT_REMOTE_READ_TIMEOUT_MS:5000}
+    cache-ttl-ms: ${AGENT_BLUEPRINT_REMOTE_CACHE_TTL_MS:5000}
+    fail-on-error: ${AGENT_BLUEPRINT_FAIL_ON_REMOTE_ERROR:false}
+    fallback-to-classpath: ${AGENT_BLUEPRINT_FALLBACK_TO_CLASSPATH:true}
+  jdbc:
+    url: ${AGENT_BLUEPRINT_JDBC_URL:}
+    username: ${AGENT_BLUEPRINT_JDBC_USERNAME:}
+    password: ${AGENT_BLUEPRINT_JDBC_PASSWORD:}
+    query-timeout-seconds: ${AGENT_BLUEPRINT_JDBC_QUERY_TIMEOUT_SECONDS:5}
+
+knowledge:
+  provider: ${AGENT_KNOWLEDGE_PROVIDER:bailian}
+  bailian-workspace-id: ${AGENT_BAILIAN_WORKSPACE_ID:}
+  bailian-knowledge-base-id: ${AGENT_BAILIAN_KNOWLEDGE_BASE_ID:}
+
+conversation:
+  mysql-host: ${AGENT_MYSQL_HOST:127.0.0.1}
+  mysql-port: ${AGENT_MYSQL_PORT:3306}
+  mysql-database: ${AGENT_MYSQL_DATABASE:}
+  mysql-username: ${AGENT_MYSQL_USERNAME:}
+  mysql-jdbc-url: ${AGENT_MYSQL_JDBC_URL:}
+  table-name: ${AGENT_CONVERSATION_TABLE:agent_conversations}

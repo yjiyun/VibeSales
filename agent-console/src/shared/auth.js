@@ -22,6 +22,8 @@ const LOCAL_DEFAULTS = {
   actor: '@developer:local',
 };
 
+const FINGERPRINT_KEY = 'agent-console.boot-fingerprint';
+
 function viteToken(name, fallback) {
   try {
     const value = import.meta.env?.[name];
@@ -42,22 +44,50 @@ function load(key, fallback = '') {
   return fallback;
 }
 
-export const auth = reactive({
-  wizardToken: load('agent-console.wizard-token', viteToken('VITE_WIZARD_TOKEN', LOCAL_DEFAULTS.wizardToken)),
-  managerToken: load('agent-console.manager-token', viteToken('VITE_MANAGER_TOKEN', LOCAL_DEFAULTS.managerToken)),
-  managerAdminToken: load(
-    'agent-console.manager-admin-token',
-    viteToken('VITE_MANAGER_ADMIN_TOKEN', LOCAL_DEFAULTS.managerAdminToken),
-  ),
-  pipelineToken: load('agent-console.pipeline-token', viteToken('VITE_PIPELINE_TOKEN', LOCAL_DEFAULTS.pipelineToken)),
-  runtimeToken: load('agent-console.runtime-token', viteToken('VITE_RUNTIME_TOKEN', LOCAL_DEFAULTS.runtimeToken)),
-  runtimeAdminToken: load(
-    'agent-console.runtime-admin-token',
+function bootFingerprint() {
+  return [
+    viteToken('VITE_ORCHESTRATION_MODE', 'local'),
+    viteToken('VITE_WIZARD_TOKEN', LOCAL_DEFAULTS.wizardToken),
+    viteToken('VITE_PIPELINE_TOKEN', LOCAL_DEFAULTS.pipelineToken),
+    viteToken('VITE_RUNTIME_TOKEN', LOCAL_DEFAULTS.runtimeToken),
     viteToken('VITE_RUNTIME_ADMIN_TOKEN', LOCAL_DEFAULTS.runtimeAdminToken),
-  ),
-  role: load('agent-console.role', LOCAL_DEFAULTS.role),
-  actor: resolveActor(),
-});
+    viteToken('VITE_MANAGER_TOKEN', ''),
+    viteToken('VITE_MANAGER_ADMIN_TOKEN', ''),
+  ].join('\n');
+}
+
+function envAuth() {
+  return {
+    wizardToken: viteToken('VITE_WIZARD_TOKEN', LOCAL_DEFAULTS.wizardToken),
+    managerToken: viteToken('VITE_MANAGER_TOKEN', LOCAL_DEFAULTS.managerToken),
+    managerAdminToken: viteToken('VITE_MANAGER_ADMIN_TOKEN', LOCAL_DEFAULTS.managerAdminToken),
+    pipelineToken: viteToken('VITE_PIPELINE_TOKEN', LOCAL_DEFAULTS.pipelineToken),
+    runtimeToken: viteToken('VITE_RUNTIME_TOKEN', LOCAL_DEFAULTS.runtimeToken),
+    runtimeAdminToken: viteToken('VITE_RUNTIME_ADMIN_TOKEN', LOCAL_DEFAULTS.runtimeAdminToken),
+    role: LOCAL_DEFAULTS.role,
+  };
+}
+
+function shouldHydrateFromEnv() {
+  try {
+    if (typeof localStorage === 'undefined') return true;
+    return localStorage.getItem(FINGERPRINT_KEY) !== bootFingerprint();
+  } catch {
+    return true;
+  }
+}
+
+function persist(values) {
+  try {
+    if (typeof localStorage === 'undefined') return;
+    for (const [field, suffix] of Object.entries(KEYS)) {
+      localStorage.setItem('agent-console.' + suffix, values[field] ?? '');
+    }
+    localStorage.setItem(FINGERPRINT_KEY, bootFingerprint());
+  } catch {
+    /* 无 storage */
+  }
+}
 
 /** `@user:host` 形式才可能是 Matrix 账号；`@developer:local` 这类占位值不算。 */
 function looksLikeMatrixId(value) {
@@ -100,10 +130,50 @@ function resolveActor() {
   return stored || LOCAL_DEFAULTS.actor;
 }
 
-export function saveAuth() {
-  for (const [field, suffix] of Object.entries(KEYS)) {
-    localStorage.setItem('agent-console.' + suffix, auth[field] ?? '');
+function readAuth() {
+  const env = envAuth();
+  if (!shouldHydrateFromEnv()) {
+    return {
+      wizardToken: load('agent-console.wizard-token', env.wizardToken),
+      managerToken: load('agent-console.manager-token', env.managerToken),
+      managerAdminToken: load('agent-console.manager-admin-token', env.managerAdminToken),
+      pipelineToken: load('agent-console.pipeline-token', env.pipelineToken),
+      runtimeToken: load('agent-console.runtime-token', env.runtimeToken),
+      runtimeAdminToken: load('agent-console.runtime-admin-token', env.runtimeAdminToken),
+      role: load('agent-console.role', env.role),
+      actor: resolveActor(),
+    };
   }
+  try {
+    if (typeof localStorage !== 'undefined') {
+      localStorage.removeItem('agent-console.last-run-id');
+      localStorage.removeItem('agent-console.last-run-mode');
+    }
+  } catch {
+    /* ignore */
+  }
+  const values = { ...env, actor: resolveActor() };
+  persist(values);
+  return values;
+}
+
+export const auth = reactive(readAuth());
+
+export function saveAuth() {
+  persist(auth);
+}
+
+function bootActor() {
+  const platform = viteToken('VITE_ORCHESTRATION_MODE', '') === 'platform';
+  const injected = viteToken('VITE_HUMAN_ACTOR', '');
+  if (platform && injected) return injected;
+  return LOCAL_DEFAULTS.actor;
+}
+
+/** 丢掉抽屉里的手工覆盖，恢复成这次 Vite 启动注入的 env。 */
+export function restoreEnvAuth() {
+  Object.assign(auth, envAuth(), { actor: bootActor() });
+  persist(auth);
 }
 
 /** 混合栈多租户：启动时注入的 token → client_code 列表。 */
@@ -129,17 +199,9 @@ export function applyWizardTenant(clientCode) {
   return hit;
 }
 
-try {
-  if (typeof localStorage !== 'undefined' && localStorage.getItem('agent-console.wizard-token') == null) {
-    saveAuth();
-  }
-} catch {
-  /* ignore */
-}
-
 // A23：admin 角色必须用独立的 manager 管理凭证，不复用普通 manager token。
 export function managerToken() {
-  return auth.role === 'admin' ? auth.managerAdminToken : auth.managerToken;
+  return auth.role==='admin' ? auth.managerAdminToken : auth.managerToken;
 }
 
 export function headers(token = auth.wizardToken, body = false) {

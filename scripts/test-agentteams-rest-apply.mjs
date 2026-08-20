@@ -86,7 +86,8 @@ try {
   const team = resources.get('teams/chatflows-build-team');
   if (team.workerMembers.length !== 11 || team.workerMembers[0].name !== 'chatflows-leader' || team.workerMembers[0].role !== 'team_leader') throw new Error('Team REST mapping mismatch');
   const worker = resources.get('workers/wizard-intent');
-  if (!worker.soul.includes('Bundled Skill contract: p1-wizard-gate') || worker.mcpServers[0].url !== 'https://gateway.test/mcp-servers/chatflows-p1/mcp') throw new Error('rendered Worker contract missing');
+  if (!worker.soul.includes('Bundled Skill contract: p1-wizard-gate') || worker.mcpServers[0].url !== 'https://gateway.test/mcp-servers/chatflows-p1') throw new Error('rendered Worker contract missing');
+  if (worker.mcpServers[0].headers) throw new Error('MCP headers must not be injected without HIGRESS_CONSUMER_TOKEN');
   if (!worker.agents?.includes('简体中文') || !worker.agents.includes('跟协调者')) throw new Error('rendered Worker agents language override missing');
   if (!worker.agents.includes('过渡说明') || !worker.agents.includes('报错分析')) throw new Error('rendered Worker agents must cover tool narration and error analysis');
   // 契约在 AGENTS.md 之后才进系统提示，所以 SOUL.md 末尾必须带中文复述，且要排在 bundled 契约后面。
@@ -94,7 +95,18 @@ try {
   if (worker.soul.indexOf('# 语言（复述 AGENTS.md 的默认语言规则') < worker.soul.indexOf('Bundled Skill contract: p1-wizard-gate')) throw new Error('language restatement must follow bundled Skill contracts');
   if (!resources.has('humans/chatflows-coordinator')) throw new Error('Human resource missing');
   if (resources.get('humans/chatflows-coordinator').permissionLevel !== 2) throw new Error('Human must use L2 Team-scoped permission');
-  process.stdout.write('[PASS] REST apply fails closed, syncs 15 Worker Skills idempotently, creates/updates 11 Workers → Team → Human, preserves unrelated resources\n');
+
+  // qwenpaw_worker 的 update.py:_apply_mcp_servers 只在 mcpServers[].headers 缺 Authorization 时
+  // 才用容器 env 的错误 gateway key 兜底覆盖（driver_not_found 根因，见 docs/agentteams/todo.md §5）。
+  // 设置 HIGRESS_CONSUMER_TOKEN 后，REST apply 必须把它写进渲染产物的 headers 再 PUT 给 Controller。
+  const third = await run({ HIGRESS_CONSUMER_TOKEN: 'rest-mcp-token-0123456789' });
+  if (third.code !== 0) throw new Error(`token-injecting REST apply exited ${third.code}: ${third.stderr}`);
+  const tokenWorker = resources.get('workers/wizard-intent');
+  if (tokenWorker.mcpServers[0].headers?.Authorization !== 'Bearer rest-mcp-token-0123456789') throw new Error('REST apply did not inject MCP Authorization header');
+  const leader = resources.get('workers/chatflows-leader');
+  if (!Array.isArray(leader.mcpServers) || leader.mcpServers.length !== 0) throw new Error('Leader Worker mcpServers must remain empty');
+
+  process.stdout.write('[PASS] REST apply fails closed, syncs 15 Worker Skills idempotently, creates/updates 11 Workers → Team → Human, injects MCP Authorization headers, preserves unrelated resources\n');
 } finally {
   await new Promise(resolve => server.close(resolve));
 }

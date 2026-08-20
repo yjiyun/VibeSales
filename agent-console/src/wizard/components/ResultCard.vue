@@ -5,17 +5,20 @@
  * 只渲染服务端给的结论（gate / scene_id / can_generate_v0），前端不做任何判定。
  * JSON 原文保留一份，方便直接交给 P2 CLI 复现。
  *
- * P2 结果不在这里：它是时间线里独立的一格 `MatchCard.vue`（见 §8.6）。
- * 本卡的按钮只是「再跑一次 P2」的兜底入口——主路径是 CTA 直接串 P2（§8.7）。
+ * P2 嵌在本卡底部灰底折叠区（§8.6）：折叠态只露「这版会怎么工作」摘要。
+ * 尚未出 P2 时才保留「先看看效果」兜底（主路径仍是 CTA 直串，§8.7）。
  */
 
 import { computed, ref } from 'vue';
+import MatchPreviewEmbed from './MatchPreviewEmbed.vue';
 
 const props = defineProps({
   /** Phase1Result */
   result: { type: Object, default: null },
   /** 本轮是否已经出过 P2 结果（决定按钮文案：生成 / 再跑一次） */
   hasPreview: { type: Boolean, default: false },
+  /** EndToEndResult，有则在本卡底部折叠展示 */
+  preview: { type: Object, default: null },
   previewLoading: { type: Boolean, default: false },
   buildLoading: { type: Boolean, default: false },
   orchestrationMode: { type: String, default: 'local' },
@@ -42,6 +45,14 @@ const triage = computed(() => props.result?.triage ?? {});
 function json(v) {
   return JSON.stringify(v, null, 2);
 }
+
+/** PASS 收口时服务端会塞一句 CLI 交接，对向导用户无意义，不展示 */
+const userAsk = computed(() => {
+  const text = String(props.result?.ask_user ?? '').trim();
+  if (!text) return '';
+  if (/交给 P2|match --triage/i.test(text)) return '';
+  return text;
+});
 
 function exportPhase1Result() {
   const blob = new Blob([json(props.result) + '\n'], { type: 'application/json' });
@@ -90,9 +101,17 @@ function exportPhase1Result() {
         </dd>
       </dl>
 
-      <div v-if="result.ask_user" class="wz-note" style="margin-bottom: 10px">
-        {{ result.ask_user }}
+      <div v-if="userAsk" class="wz-note" style="margin-bottom: 10px">
+        {{ userAsk }}
       </div>
+
+      <MatchPreviewEmbed
+        v-if="preview"
+        :preview="preview"
+        :loading="history ? false : previewLoading"
+        :history="history"
+        @rerun="emit('preview')"
+      />
 
       <div class="wz-actions" style="margin-top: 0">
         <el-button
@@ -101,20 +120,20 @@ function exportPhase1Result() {
           :loading="buildLoading"
           @click="emit('build')"
         >
-          开始生成（{{ orchestrationMode }}）
+          开始构建（{{ orchestrationMode }}）
         </el-button>
         <el-button
-          v-if="!history"
-          :type="hasPreview ? 'default' : 'primary'"
+          v-if="!history && !hasPreview"
+          type="primary"
           :loading="previewLoading"
           @click="emit('preview')"
         >
-          {{ hasPreview ? '重跑匹配（P2）' : '🚀 先看看效果（P2 匹配）' }}
+          🚀 先看看效果（P2 匹配）
         </el-button>
-        <el-button text bg @click="showJson = !showJson">
+        <el-button class="wz-json-link" link type="primary" @click="showJson = !showJson">
           {{ showJson ? '收起' : '查看' }} Phase1Result JSON
         </el-button>
-        <el-button text bg @click="exportPhase1Result">
+        <el-button class="wz-json-link" link type="primary" @click="exportPhase1Result">
           导出平台验收 JSON
         </el-button>
       </div>
