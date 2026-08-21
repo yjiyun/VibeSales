@@ -12,9 +12,6 @@
 # Claude 本机权限（勿入库）
 .claude/settings.local.json
 
-# 独立实现仓/子仓（不纳入本仓）
-agent-core/
-
 # 模板草稿与压缩包（体积大，按需本地放置；见 flows/README.md）
 flows/Chatflow-*/
 flows/yunflow-*/
