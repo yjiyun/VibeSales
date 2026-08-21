@@ -125,6 +125,7 @@ bridge_runtime_model_env() {
 }
 run_nest() {
   preflight_nest
+  export OTEL_SERVICE_NAME="${OTEL_SERVICE_NAME:-vibe-sales-nest}"
   # Nest P4 dry-run/ingest 读 AGENT_RUNTIME_*；env 文件主写的是 RUNTIME_AUTH_TOKEN / RUNTIME_ADMIN_TOKEN。
   export AGENT_RUNTIME_TOKEN="${AGENT_RUNTIME_TOKEN:-$RUNTIME_AUTH_TOKEN}"
   export AGENT_RUNTIME_ADMIN_TOKEN="${AGENT_RUNTIME_ADMIN_TOKEN:-$RUNTIME_ADMIN_TOKEN}"
@@ -145,8 +146,8 @@ configure_toolface() {
   node "$root_dir/scripts/configure-agentteams-leader-tools.js"
   node "$root_dir/scripts/configure-agentteams-worker-mcp.js"
 }
-run_manager() { preflight_manager; [[ "${AGENTTEAMS_PREFLIGHT_ONLY:-0}" == 1 ]] && return; configure_toolface; cd "$root_dir/agent-manager"; exec ./run.sh serve; }
-run_runtime() { preflight_runtime; bridge_runtime_model_env; [[ "${AGENTTEAMS_PREFLIGHT_ONLY:-0}" == 1 ]] && return; cd "$root_dir/agent-runtime"; exec ./run.sh; }
+run_manager() { preflight_manager; export OTEL_SERVICE_NAME="${OTEL_SERVICE_NAME:-vibe-sales-manager}"; [[ "${AGENTTEAMS_PREFLIGHT_ONLY:-0}" == 1 ]] && return; configure_toolface; cd "$root_dir/agent-manager"; exec ./run.sh serve; }
+run_runtime() { preflight_runtime; bridge_runtime_model_env; export OTEL_SERVICE_NAME="${OTEL_SERVICE_NAME:-vibe-sales-runtime}"; [[ "${AGENTTEAMS_PREFLIGHT_ONLY:-0}" == 1 ]] && return; cd "$root_dir/agent-runtime"; exec ./run.sh; }
 run_console() { [[ "${AGENTTEAMS_PREFLIGHT_ONLY:-0}" == 1 ]] && return; cd "$root_dir/agent-console"; exec npm run dev; }
 # ManagerApplication.checkHttp() 启动时探测一次 Nest /api/v1/pipeline/health，不重试；
 # ts-node 编译+起 Nest 比 JVM 慢，all 模式并行起四个进程时 Manager 常常探测过早拿到
@@ -164,23 +165,85 @@ wait_for_nest() {
     sleep 1
   done
 }
+# 栈起完后核验每个组件的端口真的在监听。少一个服务时，症状是前端某条 vite 代理路径
+# 502（/orchestration/* -> manager 尤其容易被忽略，因为要点到「开始生成」才触发），
+# 排查时容易误判成端口配错或代码问题。这里在启动阶段就把缺失喊出来。
+verify_stack_ports() {
+  local waited=0 missing
+  sleep 5
+  while :; do
+    missing=""
+    (probe_tcp_url "$CHATFLOWS_NEST_URL" Nest 3100) >/dev/null 2>&1 || missing="$missing nest($CHATFLOWS_NEST_URL)"
+    if [[ "${START_MANAGER:-1}" == 1 ]]; then
+      (probe_tcp_url "${MANAGER_API:-http://127.0.0.1:8090}" Manager 8090) >/dev/null 2>&1 || missing="$missing manager(${MANAGER_API:-http://127.0.0.1:8090})"
+    fi
+    if [[ "${START_RUNTIME:-1}" == 1 ]]; then
+      (probe_tcp_url "${AGENT_RUNTIME_URL:-http://127.0.0.1:8088}" Runtime 8088) >/dev/null 2>&1 || missing="$missing runtime(${AGENT_RUNTIME_URL:-http://127.0.0.1:8088})"
+    fi
+    if [[ -z "$missing" ]]; then
+      echo "[stack] all components listening (nest + console + manager/runtime as enabled)" >&2
+      return 0
+    fi
+    waited=$((waited + 1))
+    if [[ "$waited" -ge 90 ]]; then
+      echo "[stack] WARNING components not listening after 90s:$missing" >&2
+      return 0
+    fi
+    sleep 1
+  done
+}
 case "$component" in
   nest) run_nest ;;
   manager) run_manager ;;
   runtime) run_runtime ;;
   console) run_console ;;
   all)
-    pids=()
+    # 进程表：name -> 启动函数。名字用于日志和自愈时重启对应组件。
+    names=(); pids=(); starters=()
+    spawn() { # spawn <name> <starter-shell-snippet>
+      local name="$1" starter="$2"
+      ( eval "$starter" ) & local pid=$!
+      names+=("$name"); pids+=("$pid"); starters+=("$starter")
+      echo "[stack] $name started pid=$pid" >&2
+    }
+    respawn() { # respawn <index>
+      local i="$1"
+      ( eval "${starters[$i]}" ) & pids[$i]=$!
+      echo "[stack] ${names[$i]} restarted pid=${pids[$i]}" >&2
+    }
     cleanup(){ for pid in "${pids[@]:-}"; do kill "$pid" 2>/dev/null || true; done; wait 2>/dev/null || true; }
     trap cleanup EXIT INT TERM
-    (run_nest) & pids+=("$!")
-    (run_console) & pids+=("$!")
-    if [[ "${START_MANAGER:-1}" == 1 ]]; then (wait_for_nest && run_manager) & pids+=("$!"); fi
-    if [[ "${START_RUNTIME:-1}" == 1 ]]; then (run_runtime) & pids+=("$!"); fi
-    # macOS 系统自带 bash 3.2（wait -n 要 4.3+），改用轮询代替，直到任一子进程退出。
+    spawn nest 'run_nest'
+    spawn console 'run_console'
+    # 用 if 而非 `[[ ]] && spawn`：后者在条件为假时整条命令返回非零，set -e 会直接终止脚本。
+    if [[ "${START_MANAGER:-1}" == 1 ]]; then spawn manager 'wait_for_nest && run_manager'; fi
+    if [[ "${START_RUNTIME:-1}" == 1 ]]; then spawn runtime 'run_runtime'; fi
+    (verify_stack_ports) &
+    # 单个组件挂掉（自身崩溃，或被手工 kill 误伤——四个进程同属一个 trap，
+    # kill 其中一个会连带触发 cleanup）默认自动拉起，而不是整栈退出：否则栈会静默
+    # 少一个服务继续跑，表现成前端某条代理路径 502，排查成本远高于直接重启。
+    # STACK_SUPERVISE=0 回到旧语义（任一进程退出即整栈退出），供 CI 用。
+    # macOS 系统自带 bash 3.2（wait -n 要 4.3+），故用轮询而非 wait -n。
+    supervise="${STACK_SUPERVISE:-1}"
+    declare -a restarts; for i in "${!pids[@]}"; do restarts[$i]=0; done
     while :; do
-      for pid in "${pids[@]}"; do
-        kill -0 "$pid" 2>/dev/null || { wait "$pid"; exit $?; }
+      for i in "${!pids[@]}"; do
+        if kill -0 "${pids[$i]}" 2>/dev/null; then continue; fi
+        # `wait` 对非零退出的子进程返回该状态码；set -e 下不吞掉的话，脚本会在这一行
+        # 直接终止（连 restarting 日志都来不及打），supervisor 自己就消失了。
+        status=0; wait "${pids[$i]}" || status=$?
+        if [[ "$supervise" != 1 ]]; then
+          echo "[stack] ${names[$i]} exited status=$status; stopping stack (STACK_SUPERVISE=0)" >&2
+          exit "$status"
+        fi
+        restarts[$i]=$(( restarts[$i] + 1 ))
+        if [[ "${restarts[$i]}" -gt "${STACK_MAX_RESTARTS:-5}" ]]; then
+          echo "[stack] ${names[$i]} exited status=$status and exceeded ${STACK_MAX_RESTARTS:-5} restarts; stopping stack" >&2
+          exit "$status"
+        fi
+        echo "[stack] ${names[$i]} exited status=$status; restarting (#${restarts[$i]})" >&2
+        sleep 2
+        respawn "$i"
       done
       sleep 1
     done

@@ -1,6 +1,7 @@
 package com.yjiyun.chatflows.runtime;
 
-import com.agentteams.salesagent.app.SalesCustomerAgentApplication;
+import com.vibesales.salesagent.app.SalesCustomerAgentApplication;
+import com.vibesales.salesagent.observability.RuntimeTelemetry;
 
 /**
  * `agent-runtime` 的兼容启动壳。
@@ -17,6 +18,7 @@ public final class RuntimeApplication {
         mirrorEnv("RUNTIME_AUTH_TOKEN", "AGENT_COMPAT_V1_CHAT_AUTH_TOKEN");
         ifMissingSet("AGENT_COMPAT_V1_CHAT_AUTH_ENABLED", legacyAuthEnabled());
         ifMissingSet("AGENT_APP_NAME", "agent-runtime");
+        RuntimeTelemetry.install(System.getenv());
         SalesCustomerAgentApplication.main(args);
     }
 

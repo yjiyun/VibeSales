@@ -13,7 +13,7 @@ steps:
     action: start
     llm: false
     expect:
-      default_model: deepseek-v4-flash-0731
+      default_model: deepseek-v4-flash
   - stage: S1_INDUSTRY
     action: pick
     label: 科技与企业服务

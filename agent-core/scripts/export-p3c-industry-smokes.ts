@@ -25,7 +25,9 @@ async function main() {
     const p1=wizard.buildPhase1Result({clientCode:c.clientCode,channel:'wecom',stage:'S1_SUMMARY',industryId:c.industryId,goalIds:[...c.goalIds],summary,nextAction:'preview',needsLongTermMemory:true});
     if(p1.gate!=='PASS'||p1.triage.scene_id!==c.scene)throw new Error(c.industryId+' P1 mapping failed: '+p1.gate+'/'+p1.triage.scene_id);
     const bp=await p3c.composeBlueprint({runId:'smoke_'+c.industryId,clientCode:c.clientCode,triage:p1.triage,guidance:p3.deriveGuidance(p1.triage)});
-    const check=await p3c.blueprintSelfcheck(bp);if(!check.ok||check.checks.length!==13)throw new Error(c.industryId+' Blueprint selfcheck failed');
+    const check=await p3c.blueprintSelfcheck(bp);if(!check.ok||check.checks.length!==14)throw new Error(c.industryId+' Blueprint selfcheck failed');
+    const recovery=bp.rules?.find((r)=>r.ruleCode==='recovery-detection');
+    if(!recovery||recovery.enabled===false)throw new Error(c.industryId+' expected recovery-detection from needsLongTermMemory');
     fs.writeFileSync(path.join(output,c.industryId+'.json'),JSON.stringify({...bp,version:1},null,2));
   }
   const autoSummary=wizard.buildSummary({industryId:'auto',goalIds:['faq_deflect','collect_escalate'],businessBrief:'汽车售后客服'});

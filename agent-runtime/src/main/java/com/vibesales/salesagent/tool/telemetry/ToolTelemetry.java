@@ -1,7 +1,8 @@
-package com.agentteams.salesagent.tool.telemetry;
+package com.vibesales.salesagent.tool.telemetry;
 
-import com.agentteams.salesagent.progress.ExecutionProgressListener;
-import com.agentteams.salesagent.progress.ExecutionProgressUpdate;
+import com.vibesales.salesagent.observability.RuntimeTelemetry;
+import com.vibesales.salesagent.progress.ExecutionProgressListener;
+import com.vibesales.salesagent.progress.ExecutionProgressUpdate;
 import java.util.ArrayDeque;
 import java.util.Deque;
 import java.util.LinkedHashMap;
@@ -142,6 +143,8 @@ public final class ToolTelemetry {
                         parent == null ? "" : parent.stageKey());
 
         state.stack.addLast(current);
+        RuntimeTelemetry.ToolScope telemetryScope =
+                RuntimeTelemetry.startToolCall(displayName, immutable(input));
         state.progressListener.onUpdate(
                 new ExecutionProgressUpdate(
                         "agent",
@@ -153,6 +156,7 @@ public final class ToolTelemetry {
 
         try {
             T result = invocation.get();
+            telemetryScope.success(outputMapper.apply(result));
             state.progressListener.onUpdate(
                     new ExecutionProgressUpdate(
                             "agent",
@@ -163,6 +167,13 @@ public final class ToolTelemetry {
                             endDetail(current, immutable(outputMapper.apply(result)))));
             return result;
         } catch (RuntimeException exception) {
+            telemetryScope.failure(
+                    exception,
+                    Map.of(
+                            "error",
+                            Map.of(
+                                    "type", exception.getClass().getSimpleName(),
+                                    "message", safeMessage(exception))));
             state.progressListener.onUpdate(
                     new ExecutionProgressUpdate(
                             "agent",
@@ -173,6 +184,7 @@ public final class ToolTelemetry {
                             errorDetail(current, immutable(input), exception)));
             throw exception;
         } finally {
+            telemetryScope.close();
             state.stack.removeLast();
         }
     }

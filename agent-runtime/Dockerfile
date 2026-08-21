@@ -5,8 +5,6 @@ COPY pom.xml ./
 RUN mvn -B dependency:go-offline
 
 COPY src ./src
-COPY docs ./docs
-COPY scripts ./scripts
 COPY README.md ./
 RUN mvn -B -DskipTests compile dependency:copy-dependencies -DincludeScope=runtime -DoutputDirectory=target/dist/lib
 

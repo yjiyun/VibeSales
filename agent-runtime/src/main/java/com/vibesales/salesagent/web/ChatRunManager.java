@@ -62,7 +62,7 @@ public final class ChatRunManager {
                 "start",
                 "创建运行",
                 null,
-                Map.of("createdAt", state.createdAt().toString()),
+                runCreatedDetail(normalized),
                 false);
         return state;
     }
@@ -134,7 +134,7 @@ public final class ChatRunManager {
                                     "end",
                                     "本轮执行完成",
                                     System.currentTimeMillis() - state.createdAt().toEpochMilli(),
-                                    responseDetail(response),
+                                    responseDetail(state.runCreate, response),
                                     true);
                             store.markCompleted(
                                     new ChatRunStore.RunCompletion(
@@ -176,8 +176,61 @@ public final class ChatRunManager {
                         });
     }
 
-    private static Map<String, Object> responseDetail(ChatResponse response) {
+    /**
+     * {@code run.created} 节点明细：这一轮请求进来时到底带了什么。
+     *
+     * <p>先前只有 {@code createdAt} 一个字段——整条时间线的第一个节点看不出请求参数，
+     * 而"客户发的原话是什么、选的哪个租户 / 蓝图"往往是排查的第一个问题。
+     */
+    private static Map<String, Object> runCreatedDetail(ChatRunStore.RunCreate runCreate) {
+        Map<String, Object> input = new LinkedHashMap<>();
+        input.put("messagePreview", safe(runCreate.messagePreview()));
+        input.put("clientCode", safe(runCreate.clientCode()));
+        input.put("cluster", safe(runCreate.cluster()));
+        input.put("sceneCode", safe(runCreate.sceneCode()));
+        input.put("runtimeAgentId", safe(runCreate.runtimeAgentId()));
+        input.put("conversationId", safe(runCreate.conversationId()));
+        input.put("chatUser", safe(runCreate.chatUser()));
+        input.put("selectorMode", safe(runCreate.selectorMode()));
+        input.put("selectionId", safe(runCreate.selectionId()));
         Map<String, Object> detail = new LinkedHashMap<>();
+        detail.put("input", java.util.Collections.unmodifiableMap(input));
+        detail.put("createdAt", runCreate.createdAt() == null ? "" : runCreate.createdAt().toString());
+        detail.put("conversationId", safe(runCreate.conversationId()));
+        detail.put("chatUser", safe(runCreate.chatUser()));
+        return java.util.Collections.unmodifiableMap(detail);
+    }
+
+    /**
+     * {@code run.complete} 节点明细。
+     *
+     * <p>补上 {@code input} / {@code output} 两个专用键：先前只有平铺字段，前端「输入 / 输出」两栏
+     * 读的是 {@code detail.input} / {@code detail.output}，取不到就显示"无"——整轮最终节点上看不到
+     * 客户问了什么、机器人答了什么。{@code output.messages} 用数组形状与 LLM 节点共用渲染路径，
+     * 且必须非空（空数组会被前端渲染成字面量 {@code {"messages": []}}）。
+     */
+    private static Map<String, Object> responseDetail(
+            ChatRunStore.RunCreate runCreate, ChatResponse response) {
+        Map<String, Object> input = new LinkedHashMap<>();
+        Map<String, Object> userMessage = new LinkedHashMap<>();
+        userMessage.put("role", "user");
+        userMessage.put("text", runCreate == null ? "" : safe(runCreate.messagePreview()));
+        input.put("messages", List.of(java.util.Collections.unmodifiableMap(userMessage)));
+        input.put("conversationId", safe(response.conversationId()));
+        input.put("chatUser", safe(response.chatUser()));
+
+        Map<String, Object> replyMessage = new LinkedHashMap<>();
+        replyMessage.put("role", "assistant");
+        replyMessage.put("text", safe(response.reply()));
+        Map<String, Object> output = new LinkedHashMap<>();
+        output.put("messages", List.of(java.util.Collections.unmodifiableMap(replyMessage)));
+        output.put("recoveryMode", safe(response.recoveryMode()));
+        output.put("targetIntent", safe(response.targetIntent()));
+        output.put("queueVersion", safe(response.queueVersion()));
+
+        Map<String, Object> detail = new LinkedHashMap<>();
+        detail.put("input", java.util.Collections.unmodifiableMap(input));
+        detail.put("output", java.util.Collections.unmodifiableMap(output));
         detail.put("reply", response.reply());
         detail.put("conversationId", response.conversationId());
         detail.put("robotConversationId", response.robotConversationId());

@@ -1,31 +1,50 @@
 package com.yjiyun.chatflows.manager.observability;
-import io.opentelemetry.api.common.AttributeKey; import io.opentelemetry.api.common.Attributes; import io.opentelemetry.api.trace.*; import io.opentelemetry.context.Context;
-import java.util.*;
-/** Locks the GenAI input/output.messages JSON shape (panel-recognized, §5.3) + escaping + capture toggle. */
+
+import io.opentelemetry.api.common.AttributeKey;
+import io.opentelemetry.api.common.Attributes;
+import io.opentelemetry.api.trace.Span;
+import io.opentelemetry.api.trace.SpanContext;
+import io.opentelemetry.api.trace.StatusCode;
+import java.util.HashMap;
+import java.util.Map;
+
+/** Locks manager-side GenAI attribute semantics. */
 public final class ManagerTelemetryMessagesSelfTest {
  public static void main(String[] args)throws Exception{
-  // 1) capture toggle：默认开、显式 false/none 关，其余当开。
   if(!ManagerTelemetry.captureContent(Map.of()))throw new AssertionError("default must capture");
   if(!ManagerTelemetry.captureContent(Map.of("OTEL_INSTRUMENTATION_GENAI_CAPTURE_MESSAGE_CONTENT","span_and_event")))throw new AssertionError("span_and_event must capture");
   if(ManagerTelemetry.captureContent(Map.of("OTEL_INSTRUMENTATION_GENAI_CAPTURE_MESSAGE_CONTENT","false")))throw new AssertionError("false must not capture");
   if(ManagerTelemetry.captureContent(Map.of("OTEL_INSTRUMENTATION_GENAI_CAPTURE_MESSAGE_CONTENT","none")))throw new AssertionError("none must not capture");
 
-  // 2) input/output 写到面板认的属性键，且正文里的引号/换行被正确转义（不是裸字符串拼接）。
-  RecordingSpan span=new RecordingSpan();
-  ManagerTelemetry.input(span,"user","P1 spec:\nline \"with quotes\" and\ttab");
-  ManagerTelemetry.output(span,"assistant","tool_calls: await_leader","tool_calls");
-  String in=span.attrs.get("gen_ai.input.messages"),out=span.attrs.get("gen_ai.output.messages");
-  if(in==null||out==null)throw new AssertionError("messages not written: "+span.attrs);
-  // 面板 JSON 形状：[{role,parts:[{type:text,content}]}]
+  eq(ManagerTelemetry.spanKind("plan"),"AGENT","plan kind");
+  eq(ManagerTelemetry.operationName("plan"),"invoke_agent","plan operation");
+  eq(ManagerTelemetry.spanKind("dispatch"),"TOOL","dispatch kind");
+  eq(ManagerTelemetry.operationName("dispatch"),"execute_tool","dispatch operation");
+  eq(ManagerTelemetry.toolName("collect"),"collect_result","collect tool name");
+
+  RecordingSpan agentSpan=new RecordingSpan();
+  ManagerTelemetry.writeInput(agentSpan,"plan","user","P1 spec:\nline \"with quotes\" and\ttab");
+  ManagerTelemetry.writeOutput(agentSpan,"plan","assistant","tool_calls: await_leader","tool_calls");
+  String in=agentSpan.attrs.get("gen_ai.input.messages"),out=agentSpan.attrs.get("gen_ai.output.messages");
+  if(in==null||out==null)throw new AssertionError("agent messages not written: "+agentSpan.attrs);
   if(!in.startsWith("[{")||!in.contains("\"role\":\"user\"")||!in.contains("\"type\":\"text\"")||!in.contains("\"parts\":["))throw new AssertionError(in);
   if(!out.contains("\"role\":\"assistant\"")||!out.contains("\"finish_reason\":\"tool_calls\""))throw new AssertionError(out);
-  // 转义：换行/引号/制表符按 JSON 转义，正文里不得出现裸换行。
   if(!in.contains("\\n")||!in.contains("\\\"with quotes\\\"")||!in.contains("\\t"))throw new AssertionError("content not escaped: "+in);
   if(in.indexOf('\n')>=0)throw new AssertionError("raw newline leaked into attribute value");
+  if(agentSpan.attrs.containsKey("gen_ai.tool.call.arguments")||agentSpan.attrs.containsKey("gen_ai.tool.call.result"))throw new AssertionError("agent span leaked tool attributes: "+agentSpan.attrs);
 
-  System.out.println("[PASS] manager GenAI input/output.messages shape + escaping + capture toggle");
+  RecordingSpan toolSpan=new RecordingSpan();
+  ManagerTelemetry.writeInput(toolSpan,"dispatch","user","dispatch phase P1");
+  ManagerTelemetry.writeOutput(toolSpan,"dispatch","assistant","worker accepted","success");
+  eq(toolSpan.attrs.get("gen_ai.tool.call.arguments"),"dispatch phase P1","tool arguments");
+  eq(toolSpan.attrs.get("gen_ai.tool.call.result"),"worker accepted","tool result");
+  if(!toolSpan.attrs.containsKey("gen_ai.input.messages")||!toolSpan.attrs.containsKey("gen_ai.output.messages"))throw new AssertionError("tool span should keep compatibility messages: "+toolSpan.attrs);
+
+  System.out.println("[PASS] manager GenAI kind/operation/body semantics + escaping + capture toggle");
  }
- /** 只记录 setAttribute(String) 的最小 Span 桩。 */
+
+ private static void eq(Object got,Object want,String label){if(!java.util.Objects.equals(got,want))throw new AssertionError(label+": got "+got+" want "+want);}
+
  private static final class RecordingSpan implements Span{
   final Map<String,String> attrs=new HashMap<>();
   @Override public <T> Span setAttribute(AttributeKey<T> key,T value){if(value!=null)attrs.put(key.getKey(),String.valueOf(value));return this;}

@@ -22,6 +22,7 @@ const state = {
       rawConfigs: { qwenEnableCompatible: true },
     },
   },
+  sources: {},
   mutations: [],
   completions: 0,
 };
@@ -74,9 +75,24 @@ const server = http.createServer((request, response) => {
       const name = decodeURIComponent(url.pathname.slice('/v1/ai/providers/'.length));
       state.mutations.push(`PUT /v1/ai/providers/${name}`);
       assert.equal(body.name, name);
-      assert.deepEqual(body.tokens, ['sk-newkey-bbbbbbbb']);
+      assert.ok(Array.isArray(body.tokens) && body.tokens.length === 1);
       state.providers[name] = { ...state.providers[name], ...body, tokens: body.tokens };
       send(response, 200, { data: state.providers[name] });
+      return;
+    }
+    if (url.pathname.startsWith('/v1/service-sources/') && request.method === 'GET') {
+      const name = decodeURIComponent(url.pathname.slice('/v1/service-sources/'.length));
+      const source = state.sources[name];
+      send(response, source ? 200 : 404, source ? { data: source } : { message: 'not found' });
+      return;
+    }
+    if (url.pathname.startsWith('/v1/service-sources/') && request.method === 'PUT') {
+      const name = decodeURIComponent(url.pathname.slice('/v1/service-sources/'.length));
+      state.mutations.push(`PUT /v1/service-sources/${name}`);
+      assert.equal(body.name, name);
+      assert.ok(body.domain);
+      state.sources[name] = { ...state.sources[name], ...body };
+      send(response, 200, { data: state.sources[name] });
       return;
     }
     if (
@@ -171,6 +187,10 @@ try {
   assert.equal(planJson.provider, 'qwen');
   assert.equal(planJson.token.from, 'sk-oldke***');
   assert.equal(planJson.token.to, 'sk-newke***');
+  assert.equal(planJson.token.changed, true);
+  assert.equal(planJson.endpoint.from, '');
+  assert.equal(planJson.endpoint.to, '');
+  assert.equal(planJson.endpoint.changed, false);
   assert.equal(planJson.restart.dataplane, 'command');
   assert.equal(planJson.restart.nest, 'skip');
   assert.equal(planJson.restart.runtime, 'skip');
@@ -214,7 +234,7 @@ try {
   const idempotent = await run([...localArgs, '--apply', '--confirm', 'rotate-llm-key']);
   assert.equal(idempotent.status, 0, idempotent.stderr);
   assert.equal(parseReport(idempotent.stdout).action, 'unchanged');
-  assert.match(idempotent.stdout, /already has this token/);
+  assert.match(idempotent.stdout, /already has this token and endpoint/);
   assert.deepEqual(state.mutations, ['PUT /v1/ai/providers/qwen']);
   assert.equal(fs.existsSync(restartMarker), false, 'unchanged apply must not restart');
   assert.equal(state.completions, 2);
@@ -224,7 +244,18 @@ try {
     type: 'openai',
     tokens: ['sk-oldkey-aaaaaaaa'],
     version: 1,
-    rawConfigs: { openaiCustomUrl: 'https://dashscope.aliyuncs.com/compatible-mode/v1' },
+    rawConfigs: {
+      openaiCustomUrl: 'https://dashscope.aliyuncs.com/compatible-mode/v1',
+      openaiCustomServiceName: 'openai-compat.dns',
+    },
+  };
+  state.sources['openai-compat'] = {
+    name: 'openai-compat',
+    type: 'dns',
+    domain: 'dashscope.aliyuncs.com',
+    port: 443,
+    protocol: 'https',
+    version: '6',
   };
   fs.rmSync(restartMarker, { force: true });
   const agentteams = await run([
@@ -239,7 +270,84 @@ try {
   assert.match(fs.readFileSync(managerEnv, 'utf8'), /^AGENTTEAMS_LLM_API_KEY=sk-newkey-bbbbbbbb$/m);
   assert.doesNotMatch(fs.readFileSync(envFile, 'utf8'), /openai-compat/);
 
-  process.stdout.write('[PASS] rotate-higress-llm-key plan/confirm/named-PUT/persist/dataplane-restart/idempotency/agentteams/redaction\n');
+  const badUrl = await run([...localArgs, '--url', 'http://example.com/v1']);
+  assert.notEqual(badUrl.status, 0);
+  assert.match(badUrl.stderr, /must be HTTPS/);
+
+  const vendorUrl = 'https://ws-example.cn-beijing.maas.aliyuncs.com/compatible-mode/v1';
+  state.sources.qwen = {
+    name: 'qwen',
+    type: 'dns',
+    domain: 'dashscope.aliyuncs.com',
+    port: 443,
+    protocol: 'https',
+    version: '1',
+  };
+  fs.rmSync(restartMarker, { force: true });
+  const urlPlan = await run([...localArgs, '--url', vendorUrl]);
+  assert.equal(urlPlan.status, 0, urlPlan.stderr);
+  const urlPlanJson = parseReport(urlPlan.stdout);
+  assert.equal(urlPlanJson.action, 'update');
+  assert.equal(urlPlanJson.token.changed, false);
+  assert.equal(urlPlanJson.endpoint.changed, true);
+  assert.equal(urlPlanJson.endpoint.to, vendorUrl);
+  assert.equal(state.mutations.filter(item => item === 'PUT /v1/ai/providers/qwen').length, 1);
+
+  const urlApply = await run([...localArgs, '--url', vendorUrl, '--apply', '--confirm', 'rotate-llm-key']);
+  assert.equal(urlApply.status, 0, urlApply.stderr);
+  assert.match(urlApply.stdout, /endpoint updated/);
+  assert.equal(state.providers.qwen.type, 'openai');
+  assert.equal(state.providers.qwen.rawConfigs.openaiCustomUrl, vendorUrl);
+  assert.equal(state.providers.qwen.rawConfigs.apiUrl, vendorUrl);
+  assert.equal(state.sources.qwen.domain, 'ws-example.cn-beijing.maas.aliyuncs.com');
+  assert.ok(state.mutations.includes('PUT /v1/service-sources/qwen'));
+  assert.match(fs.readFileSync(envFile, 'utf8'), new RegExp(`^HIGRESS_OPENAI_API_URL=${vendorUrl.replaceAll('/', '\\/')}$`, 'm'));
+  assert.equal(fs.readFileSync(restartMarker, 'utf8'), 'restarted');
+
+  fs.rmSync(restartMarker, { force: true });
+  const urlIdempotent = await run([...localArgs, '--url', vendorUrl, '--apply', '--confirm', 'rotate-llm-key']);
+  assert.equal(urlIdempotent.status, 0, urlIdempotent.stderr);
+  assert.equal(parseReport(urlIdempotent.stdout).action, 'unchanged');
+  assert.equal(parseReport(urlIdempotent.stdout).provider, 'qwen');
+  assert.equal(fs.existsSync(restartMarker), false);
+
+  state.providers.openai = {
+    name: 'openai',
+    type: 'openai',
+    tokens: ['sk-newkey-bbbbbbbb'],
+    version: 1,
+    rawConfigs: { openaiCustomUrl: vendorUrl, apiUrl: vendorUrl },
+  };
+  const namedOpenai = await run([...localArgs, '--url', vendorUrl, '--apply', '--confirm', 'rotate-llm-key']);
+  assert.equal(namedOpenai.status, 0, namedOpenai.stderr);
+  assert.equal(parseReport(namedOpenai.stdout).provider, 'openai');
+  assert.equal(parseReport(namedOpenai.stdout).action, 'unchanged');
+
+  const putsBeforeEnvUrl = state.mutations.length;
+  const otherUrl = 'https://dashscope.aliyuncs.com/compatible-mode/v1';
+  const fromEnvUrl = await run(localArgs, { HIGRESS_LLM_API_URL: otherUrl, HIGRESS_LLM_API_KEY: 'sk-newkey-bbbbbbbb' });
+  assert.equal(fromEnvUrl.status, 0, fromEnvUrl.stderr);
+  assert.equal(parseReport(fromEnvUrl.stdout).endpoint.to, otherUrl);
+  assert.equal(parseReport(fromEnvUrl.stdout).endpoint.changed, true);
+  assert.equal(parseReport(fromEnvUrl.stdout).action, 'update');
+  assert.equal(state.mutations.length, putsBeforeEnvUrl, 'HIGRESS_LLM_API_URL dry-run must not PUT');
+
+  const compatUrl = 'https://dashscope.aliyuncs.com/compatible-mode/v1';
+  fs.rmSync(restartMarker, { force: true });
+  const agentteamsUrl = await run([
+    '--target', 'agentteams',
+    '--env', envFile,
+    '--url', vendorUrl,
+    '--apply',
+    '--confirm', 'rotate-llm-key',
+  ]);
+  assert.equal(agentteamsUrl.status, 0, agentteamsUrl.stderr);
+  assert.equal(state.providers['openai-compat'].rawConfigs.openaiCustomUrl, vendorUrl);
+  assert.equal(state.sources['openai-compat'].domain, 'ws-example.cn-beijing.maas.aliyuncs.com');
+  assert.ok(state.mutations.includes('PUT /v1/service-sources/openai-compat'));
+  assert.match(fs.readFileSync(managerEnv, 'utf8'), new RegExp(`^AGENTTEAMS_OPENAI_BASE_URL=${vendorUrl.replaceAll('/', '\\/')}$`, 'm'));
+
+  process.stdout.write('[PASS] rotate-higress-llm-key plan/confirm/named-PUT/persist/dataplane-restart/idempotency/agentteams/redaction/vendor-url\n');
 } finally {
   await new Promise(resolve => server.close(resolve));
   fs.rmSync(tmp, { recursive: true, force: true });

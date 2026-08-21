@@ -2,7 +2,7 @@
  * 「构建智能体」过程卡：产物阶段做骨架，Room 过滤后的关键消息做旁注。
  * 不改 RoomTimeline；思考 / tool JSON 在前端丢掉。
  */
-import { expertRole, latestArtifact } from './artifact-preview';
+import { expertRole, latestArtifact } from './artifact-preview.js';
 
 export const BUILD_STEPS = [
   { id: 'dispatch', label: '派发编排' },
@@ -67,16 +67,44 @@ export function isLeaderFailureBody(body) {
   return /^Internal error$/i.test(text) || /^RUN_BLOCKED\b/i.test(text);
 }
 
+/** Room 里 Leader 已经从卡住态往前走了：历史 RUN_BLOCKED 不能再当当前故障。 */
+export function isLeaderRecoveryBody(body) {
+  const text = String(body ?? '');
+  return (
+    /\bAPPROVAL_REQUIRED\b/.test(text) ||
+    /\bCOORDINATOR_UNBLOCK\b/.test(text) ||
+    /\bstatus=AWAITING_APPROVAL\b/.test(text) ||
+    /\bTASK_ASSIGNED\b/.test(text)
+  );
+}
+
+/**
+ * Nest 权威状态才结束「等发布闸门」轮询。
+ * Room 里的 RUN_BLOCKED / BLOCKED_HUMAN 只是过程提示，Leader 可能随后发出 APPROVAL_REQUIRED；
+ * 把卡住文案当终态会让「确认发布」必须靠刷新才能出现。
+ */
+export function isPublishGateTerminal(status) {
+  return ['WAITING_HUMAN', 'SUCCEEDED', 'FAILED', 'ABORTED'].includes(String(status ?? ''));
+}
+
 export function leaderBlockedMessage(room) {
   const msgs = room?.messages ?? [];
+  let lastFailure = '';
   for (let i = 0; i < msgs.length; i += 1) {
     const body = String(msgs[i]?.body ?? '');
-    if (msgs[i]?.for_run && isLeaderFailureBody(body)) return body;
-    if (msgs[i]?.for_run && /NEW_RUN/.test(body) && isLeaderFailureBody(msgs[i + 1]?.body)) {
-      return String(msgs[i + 1].body).trim();
+    const followError = i > 0 && Boolean(msgs[i - 1]?.for_run) && isLeaderFailureBody(body);
+    if (!msgs[i]?.for_run && !followError) continue;
+    if (isLeaderFailureBody(body)) {
+      lastFailure = body.trim();
+      continue;
     }
+    if (/NEW_RUN/.test(body) && isLeaderFailureBody(msgs[i + 1]?.body)) {
+      lastFailure = String(msgs[i + 1].body).trim();
+      continue;
+    }
+    if (isLeaderRecoveryBody(body)) lastFailure = '';
   }
-  return '';
+  return lastFailure;
 }
 
 export function stepIdForSender(sender) {

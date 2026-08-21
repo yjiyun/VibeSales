@@ -20,7 +20,7 @@ import { createBuildRun } from './build-run';
 import { renderMarkdown } from './markdown';
 import { savePublication, loadPublication, isChatReady } from '../shared/publication';
 import { applyApprovalGate, extractApprovalId, fromPipelineGet, mergePlatformSnapshot, publicationFromApprove, publicationFromSnapshot } from '../shared/run-snapshot';
-import { deriveBuildSteps, emptyBuildProgress, leaderBlockedMessage } from '../shared/build-progress';
+import { deriveBuildSteps, emptyBuildProgress, isPublishGateTerminal, leaderBlockedMessage } from '../shared/build-progress';
 import QuestionCard from './components/QuestionCard.vue';
 import ResultCard from './components/ResultCard.vue';
 import BuildProgressCard from './components/BuildProgressCard.vue';
@@ -116,6 +116,8 @@ const thinkingStartedAt = ref(0);
 const thinkingSecs = ref(0);
 let thinkingTimer = null;
 let buildTimer = null;
+/** 刷新恢复与点「生成」会各起一轮闸门等待；新一轮必须取消上一轮，避免双轮询互相覆盖。 */
+let gateWatchId = 0;
 
 const started = computed(() => !!sessionId.value);
 const tenants = wizardTenants();
@@ -132,6 +134,17 @@ function tenantLabel(code) {
   if (code === 'acme_agri') return '极飞 · acme_agri';
   if (code === 'acme_edu') return '教育 · acme_edu';
   return code;
+}
+
+function authFailHint() {
+  const port = typeof location !== 'undefined' ? location.port : '';
+  if (port === '15173' || (!import.meta.env.DEV && port !== '5173' && port !== '3100')) {
+    return '鉴权失败：15173 静态包里的 Wizard Bearer 与 BFF 对不上。在仓库根目录执行 ./scripts/refresh-agentteams-console.sh 后强制刷新（Cmd+Shift+R）。不要直接打开 Nest :3100。';
+  }
+  if (port === '3100') {
+    return '鉴权失败：请用 platform Console http://127.0.0.1:15173/ 或 Vite http://127.0.0.1:5173 ，不要直接打开 Nest :3100。:3100 是 API，静态页默认凭证对不上当前后端。';
+  }
+  return '鉴权失败：请用 Vite 控制台 http://127.0.0.1:5173 ，或 platform Console http://127.0.0.1:15173/（须 refresh-agentteams-console.sh 打包）。不要直接打开 Nest :3100。';
 }
 
 async function onTenantChange(code) {
@@ -167,11 +180,7 @@ onMounted(async () => {
     }
   } catch (err) {
     const msg = err.message || String(err);
-    ElMessage.error(
-      /unauthorized|401/i.test(msg)
-        ? '鉴权失败：请用 Vite 控制台 http://127.0.0.1:5173 ，不要直接打开 Nest :3100。:3100 是 API，静态页里的默认凭证对不上当前后端。'
-        : `后端未就绪：${msg}`,
-    );
+    ElMessage.error(/unauthorized|401/i.test(msg) ? authFailHint() : `后端未就绪：${msg}`);
   }
   restoreSession();
 });
@@ -203,16 +212,29 @@ function restoreSession() {
       error: '',
     };
   }
+  // 刷新后过程时间线（Room 旁注）通常已经没了；构建已结束就收成「已构建 + 用时」。
+  const alreadyDone =
+    saved.published === true ||
+    ['WAITING_HUMAN', 'SUCCEEDED', 'FAILED', 'ABORTED'].includes(
+      String(saved.publishSnapshot?.status ?? ''),
+    );
+  for (const item of timeline.value) {
+    if (item.type !== 'build') continue;
+    const itemDone = ['WAITING_HUMAN', 'SUCCEEDED', 'FAILED', 'ABORTED'].includes(
+      String(item.progress?.status ?? ''),
+    );
+    if (alreadyDone || itemDone) item.compact = true;
+  }
   nextTick(() => scrollToBottom(true));
   ElMessage.info('已恢复上次的对话');
-  // 恢复出来的 run 可能在这期间已经推进到发布闸门，顺手复查一次，
-  // 免得用户看着一条「仍在生成」的旧卡片却不知道其实已经可以发布了。
+  // 刷新会拆掉 startBuild 里那轮 waitForPublishGate。只复查一次的话，若当时 Nest
+  // 还没到 WAITING_HUMAN（Leader 已在 Room 喊了 APPROVAL_REQUIRED、审批还没写进
+  // artifact），按钮不会亮；之后闸门到了也不会再轮询——必须再刷一次才出现「确认发布」。
   if (saved.runId && !saved.published) {
     ensureBuildCard();
     const live = liveBuildItem();
-    startBuildTimer(live?.startedAt);
-    refreshBuildProgress(saved.runId).catch(() => {});
-    recheckPublishGate().catch(() => {});
+    if (!alreadyDone) startBuildTimer(live?.startedAt);
+    resumePublishGateWatch(saved.runId);
   }
 }
 
@@ -242,6 +264,7 @@ watch(
 );
 
 onUnmounted(() => {
+  gateWatchId += 1;
   stopThinkingTimer();
   stopBuildTimer();
 });
@@ -485,10 +508,8 @@ function startBuildTimer(fromMs) {
   buildTimer = setInterval(tick, 1000);
 }
 
-function maybeStopBuildTimer(snapshot, blocked) {
-  if (blocked || ['WAITING_HUMAN', 'SUCCEEDED', 'FAILED', 'ABORTED'].includes(snapshot?.status)) {
-    stopBuildTimer();
-  }
+function maybeStopBuildTimer(snapshot) {
+  if (isPublishGateTerminal(snapshot?.status)) stopBuildTimer();
 }
 
 /** 把 P2 结果写进当前结果卡，不再独占时间线一格 */
@@ -844,7 +865,7 @@ async function refreshBuildProgress(runId) {
     live.progress = progress;
     live.error = error;
   }
-  maybeStopBuildTimer(snapshot, blocked);
+  maybeStopBuildTimer(snapshot);
   return { snapshot, blocked, progress };
 }
 
@@ -860,38 +881,47 @@ function syncPublicationFromSnapshot(snapshot) {
   sandboxPublication.value = loadPublication();
 }
 
-function rememberPublishSnapshot(snapshot) {
+function rememberPublishSnapshot(snapshot, extra = {}) {
   const published = snapshot.status === 'SUCCEEDED';
   if (published) syncPublicationFromSnapshot(snapshot);
+  const error = Object.prototype.hasOwnProperty.call(extra, 'error') ? extra.error : publishState.value?.error || '';
   if (!publishState.value) {
-    publishState.value = { snapshot, published, publishing: false, error: '' };
+    publishState.value = { snapshot, published, publishing: false, error };
     const live = timeline.value.some((row) => row.type === 'publish' && !row.history);
     if (!live) pushPublishCard();
     return;
   }
   publishState.value.snapshot = snapshot;
   publishState.value.published = published;
+  if (Object.prototype.hasOwnProperty.call(extra, 'error')) publishState.value.error = extra.error;
 }
 
-async function waitForPublishGate(runId) {
+function resumePublishGateWatch(runId) {
+  const watchId = ++gateWatchId;
+  waitForPublishGate(runId, watchId).catch(() => {});
+}
+
+async function waitForPublishGate(runId, watchId = ++gateWatchId) {
   const attempts = orchestrationMode === 'platform' ? 900 : 60;
   const delayMs = orchestrationMode === 'platform' ? 2000 : 1500;
   for (let attempt = 0; attempt < attempts; attempt += 1) {
+    if (watchId !== gateWatchId) {
+      return publishState.value?.snapshot || { runId, status: 'RUNNING' };
+    }
     const { snapshot, blocked } = await refreshBuildProgress(runId);
-    if (['WAITING_HUMAN', 'SUCCEEDED', 'FAILED', 'ABORTED'].includes(snapshot.status)) {
-      rememberPublishSnapshot(snapshot);
+    if (isPublishGateTerminal(snapshot.status)) {
+      rememberPublishSnapshot(snapshot, { error: '' });
       return snapshot;
     }
-    // 落进 publishState 而不是 throw：throw 会跳过下面的 rememberPublishSnapshot，
-    // 卡片压根不会出现，用户只看到一闪而过的 toast，摸不到「重试」按钮。很多
-    // RUN_BLOCKED（driver_not_found 等 MCP 连接类）几秒后就自愈，值得让用户在
-    // 卡片上直接点「重试」，不必去 Team Room 手敲消息。
+    // Room 卡住只提示、不结束轮询。RUN_BLOCKED 常几秒自愈；Leader 从 BLOCKED_HUMAN
+    // 走到 APPROVAL_REQUIRED 也一样。这里 return 的话，按钮只能靠刷新出现。
     if (blocked) {
-      rememberPublishSnapshot(snapshot);
-      if (publishState.value) {
-        publishState.value.error = `Team Leader 没有继续编排：${blocked.slice(0, 120)}`;
-      }
-      return snapshot;
+      rememberPublishSnapshot(snapshot, {
+        error: `Team Leader 没有继续编排：${blocked.slice(0, 120)}`,
+      });
+    } else if (publishState.value) {
+      publishState.value.snapshot = snapshot;
+      publishState.value.error = '';
     }
     // approvalGuess 是 Leader 口头汇报的线索，不采信为真，但值得更快去问一次权威源，
     // 免得用户在「Leader 已经喊了 APPROVAL_REQUIRED」和「按钮还没点亮」之间多等一轮。
@@ -1059,8 +1089,10 @@ async function startBuild() {
     lastRunId.value = orchestrationRun.value.run_id || '';
     localStorage.setItem('agent-console.last-run-id', orchestrationRun.value.run_id);
     localStorage.setItem('agent-console.last-run-mode', orchestrationMode);
+    const watchId = ++gateWatchId;
     await refreshBuildProgress(orchestrationRun.value.run_id);
-    const snapshot = await waitForPublishGate(orchestrationRun.value.run_id);
+    const snapshot = await waitForPublishGate(orchestrationRun.value.run_id, watchId);
+    if (watchId !== gateWatchId) return;
     scrollToBottom(true);
     if (snapshot.timedOut) {
       ElMessage.warning(
@@ -1475,9 +1507,10 @@ async function restart() {
 
               <BuildProgressCard
                 v-else-if="item.type === 'build'"
-                :progress="item.history ? item.progress : buildState?.progress"
-                :error="item.history ? item.error || '' : buildState?.error || ''"
+                :progress="item.history ? item.progress : (buildState?.progress ?? item.progress)"
+                :error="item.history ? item.error || '' : (buildState?.error || item.error || '')"
                 :elapsed-secs="item.history ? item.elapsedSecs || 0 : (buildState?.elapsedSecs ?? item.elapsedSecs ?? 0)"
+                :compact="!!item.compact"
                 :mode="orchestrationMode"
                 :show-inspector="showInspector"
                 :history="!!item.history"

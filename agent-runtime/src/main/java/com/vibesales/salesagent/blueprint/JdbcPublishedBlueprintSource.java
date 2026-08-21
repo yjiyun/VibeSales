@@ -33,7 +33,6 @@ public final class JdbcPublishedBlueprintSource implements BlueprintSource {
 
     public static final String SOURCE_TYPE = "jdbc_published";
 
-    private static final String TENANT_USER_ID = "__tenant__";
     private static final String SQL_SELECT_PUBLISHED =
             "select blueprint_id, version, payload::text "
                     + "from agent_blueprint "
@@ -104,6 +103,17 @@ public final class JdbcPublishedBlueprintSource implements BlueprintSource {
             String sceneCode,
             String runtimeAgentId,
             String version) {
+        return resolve(clientCode, cluster, sceneCode, runtimeAgentId, version, "");
+    }
+
+    @Override
+    public Optional<BlueprintHandle> resolve(
+            String clientCode,
+            String cluster,
+            String sceneCode,
+            String runtimeAgentId,
+            String version,
+            String userId) {
         if (!jdbcEnabled()) {
             return Optional.empty();
         }
@@ -111,17 +121,19 @@ public final class JdbcPublishedBlueprintSource implements BlueprintSource {
         String normalizedCluster = safe(cluster);
         String normalizedSceneCode = safe(sceneCode);
         String normalizedRuntimeAgentId = safe(runtimeAgentId);
+        String normalizedUserId = safe(userId);
         Integer requestedVersion = parseRequestedVersion(version);
         if (normalizedClientCode.isEmpty()) {
             return Optional.empty();
         }
-        if (!normalizedRuntimeAgentId.isEmpty()) {
+        if (!normalizedRuntimeAgentId.isEmpty() && !normalizedUserId.isEmpty()) {
             Optional<BlueprintHandle> bound =
                     resolveByTenantBinding(
                             normalizedClientCode,
                             normalizedCluster,
                             normalizedSceneCode,
                             normalizedRuntimeAgentId,
+                            normalizedUserId,
                             requestedVersion);
             if (bound.isPresent()) {
                 return bound;
@@ -164,10 +176,11 @@ public final class JdbcPublishedBlueprintSource implements BlueprintSource {
             String cluster,
             String sceneCode,
             String runtimeAgentId,
+            String userId,
             Integer requestedVersion) {
         Optional<BoundBlueprintRow> bound =
                 rowProvider.loadTenantBoundPublished(
-                        clientCode, cluster, runtimeAgentId, TENANT_USER_ID, requestedVersion);
+                        clientCode, cluster, runtimeAgentId, userId, requestedVersion);
         if (bound.isEmpty()) {
             return Optional.empty();
         }
@@ -358,12 +371,12 @@ public final class JdbcPublishedBlueprintSource implements BlueprintSource {
 
         @Override
         public List<StoredBlueprintRow> loadPublishedByClientCode(String clientCode) {
-            return query(SQL_SELECT_PUBLISHED, statement -> statement.setString(1, clientCode));
+            return query(SQL_SELECT_PUBLISHED, clientCode, statement -> statement.setString(1, clientCode));
         }
 
         @Override
         public List<StoredBlueprintRow> loadAllPublished() {
-            return query(SQL_LIST_PUBLISHED, statement -> {});
+            return query(SQL_LIST_PUBLISHED, "", statement -> {});
         }
 
         @Override
@@ -389,6 +402,7 @@ public final class JdbcPublishedBlueprintSource implements BlueprintSource {
                                     requestedVersion == null
                                             ? SQL_SELECT_BOUND_WITH_CLUSTER
                                             : SQL_SELECT_BOUND_WITH_CLUSTER_AND_VERSION,
+                                    normalizedClientCode,
                                     statement -> {
                                         statement.setString(1, normalizedClientCode);
                                         statement.setString(2, normalizedTenantUserId);
@@ -415,6 +429,7 @@ public final class JdbcPublishedBlueprintSource implements BlueprintSource {
                                 requestedVersion == null
                                         ? SQL_SELECT_BOUND_WITHOUT_CLUSTER
                                         : SQL_SELECT_BOUND_WITHOUT_CLUSTER_AND_VERSION,
+                                normalizedClientCode,
                                 statement -> {
                                     statement.setString(1, normalizedClientCode);
                                     statement.setString(2, normalizedTenantUserId);
@@ -443,6 +458,7 @@ public final class JdbcPublishedBlueprintSource implements BlueprintSource {
                             requestedVersion == null
                                     ? SQL_SELECT_BOUND_LEGACY
                                     : SQL_SELECT_BOUND_LEGACY_AND_VERSION,
+                            normalizedClientCode,
                             statement -> {
                                 statement.setString(1, normalizedClientCode);
                                 statement.setString(2, normalizedTenantUserId);
@@ -467,7 +483,7 @@ public final class JdbcPublishedBlueprintSource implements BlueprintSource {
                                     : AgentBlueprintRepository.MATCH_FALLBACK));
         }
 
-        private List<StoredBlueprintRow> query(String sql, StatementBinder binder) {
+        private List<StoredBlueprintRow> query(String sql, String clientCode, StatementBinder binder) {
             Objects.requireNonNull(sql, "sql");
             try (Connection connection =
                             DriverManager.getConnection(
@@ -477,7 +493,7 @@ public final class JdbcPublishedBlueprintSource implements BlueprintSource {
                     PreparedStatement statement = connection.prepareStatement(sql)) {
                 connection.setReadOnly(true);
                 connection.setAutoCommit(false);
-                installTenantGuc(connection);
+                installTenantGuc(connection, clientCode);
                 statement.setQueryTimeout(Math.max(1, config.blueprintJdbcQueryTimeoutSeconds()));
                 binder.bind(statement);
                 try (ResultSet rs = statement.executeQuery()) {
@@ -497,8 +513,9 @@ public final class JdbcPublishedBlueprintSource implements BlueprintSource {
             }
         }
 
-        private Optional<StoredBlueprintRow> queryFirst(String sql, StatementBinder binder) {
-            List<StoredBlueprintRow> rows = query(sql, binder);
+        private Optional<StoredBlueprintRow> queryFirst(
+                String sql, String clientCode, StatementBinder binder) {
+            List<StoredBlueprintRow> rows = query(sql, clientCode, binder);
             return rows.isEmpty() ? Optional.empty() : Optional.of(rows.get(0));
         }
 
@@ -516,10 +533,21 @@ public final class JdbcPublishedBlueprintSource implements BlueprintSource {
             }
         }
 
-        private void installTenantGuc(Connection connection) {
+        /**
+         * 设置本连接的租户 GUC，供业务表的 {@code client_code = current_setting('app.client_code', true)}
+         * RLS 策略使用。
+         *
+         * <p>{@code clientCode} 为空时（{@code loadAllPublished}/schema 探测这类跨租户或非业务表查询）
+         * 沿用一个不对应任何真实租户的占位符——RLS 策略下这会让业务表查询返回 0 行而不是报错，
+         * 是刻意的 fail-closed，不是"随便填一个值"。业务表的单租户查询必须传真实 {@code clientCode}，
+         * 否则同样会被 RLS 挡成空结果，且不会有任何异常提示（之前这里一直传死的占位符，
+         * 表现为"蓝图已发布，试聊却查不到"）。
+         */
+        private void installTenantGuc(Connection connection, String clientCode) {
+            String value = clientCode == null || clientCode.isBlank() ? "jdbc-blueprint-reader" : clientCode.trim();
             try (PreparedStatement set =
                     connection.prepareStatement("select set_config('app.client_code', ?, true)")) {
-                set.setString(1, "jdbc-blueprint-reader");
+                set.setString(1, value);
                 set.execute();
             } catch (Exception ignored) {
                 // 某些库没有 RLS/GUC 约束；这里是兼容性 best-effort，不作为失败条件。
@@ -536,7 +564,7 @@ public final class JdbcPublishedBlueprintSource implements BlueprintSource {
                     PreparedStatement statement = connection.prepareStatement(sql)) {
                 connection.setReadOnly(true);
                 connection.setAutoCommit(false);
-                installTenantGuc(connection);
+                installTenantGuc(connection, "");
                 statement.setQueryTimeout(Math.max(1, config.blueprintJdbcQueryTimeoutSeconds()));
                 binder.bind(statement);
                 try (ResultSet rs = statement.executeQuery()) {

@@ -66,7 +66,7 @@ export class QwenService {
       this.client = new OpenAI({ apiKey, baseURL });
       this.trace.step('Qwen', 'client.init', {
         baseURL,
-        model: this.config.get<string>('QWEN_MODEL') ?? 'deepseek-v4-flash-0731',
+        model: this.config.get<string>('QWEN_MODEL') ?? 'deepseek-v4-flash',
         api_key_len: apiKey.length,
       });
     }
@@ -90,7 +90,7 @@ export class QwenService {
     const model =
       (meta.model ?? '').trim() ||
       this.config.get<string>('QWEN_MODEL') ||
-      'deepseek-v4-flash-0731';
+      'deepseek-v4-flash';
     const timeoutMs = Number(
       this.config.get<string>('QWEN_TIMEOUT_MS') ?? 60000,
     );

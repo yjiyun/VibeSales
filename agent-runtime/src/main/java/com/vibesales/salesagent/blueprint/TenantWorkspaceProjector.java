@@ -58,8 +58,8 @@ public final class TenantWorkspaceProjector {
         return project(
                 namespace,
                 new Content(
-                        blueprint.blueprint().promptOrEmpty().agentsMd(),
-                        blueprint.blueprint().promptOrEmpty().soulMd(),
+                        blueprint.agentsMd(),
+                        blueprint.soulMd(),
                         blueprint.skills().skills(),
                         blueprint.blueprintId(),
                         blueprint.version()));

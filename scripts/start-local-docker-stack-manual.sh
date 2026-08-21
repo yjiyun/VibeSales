@@ -130,7 +130,7 @@ case "$cmd" in
   probe-model)
     load_env
     node - <<NODE
-const model = process.env.QWEN_MODEL || 'deepseek-v4-flash-0731';
+const model = process.env.QWEN_MODEL || 'deepseek-v4-flash';
 const resp = await fetch(\`http://127.0.0.1:\${process.env.LOCAL_HIGRESS_GATEWAY_PORT}/v1/chat/completions\`, {
   method: 'POST',
   headers: {
@@ -153,15 +153,18 @@ NODE
   ./scripts/start-local-docker-stack-manual.sh 1-infra     # 起 PG/Redis/MinIO/Higress/MCP
   ./scripts/start-local-docker-stack-manual.sh 2-init      # 跑 db-init / minio-init
   ./scripts/start-local-docker-stack-manual.sh 3-higress   # 首次配置 Higress（consumer/route/MCP）
-  ./scripts/start-local-docker-stack-manual.sh rotate-key  # 只换厂商 Key（dry-run；真正写入加 --apply --confirm rotate-llm-key）
+  ./scripts/start-local-docker-stack-manual.sh rotate-key  # 只换厂商 Key/端点（dry-run；真正写入加 --apply --confirm rotate-llm-key）
   ./scripts/start-local-docker-stack-manual.sh 4-apps      # 起 Runtime/Nest/Console
   ./scripts/start-local-docker-stack-manual.sh all         # 以上全部 + verify
   ./scripts/start-local-docker-stack-manual.sh verify      # 健康检查
   ./scripts/start-local-docker-stack-manual.sh probe-model # 经 Higress 探测当前 QWEN_MODEL
   ./scripts/start-local-docker-stack-manual.sh logs [svc]  # 跟踪日志
 
-只换 Key：
+只换 Key / 供应商 URL：
   HIGRESS_LLM_API_KEY=sk-新Key ./scripts/start-local-docker-stack-manual.sh rotate-key --apply --confirm rotate-llm-key
+  HIGRESS_LLM_API_KEY=sk-新Key ./scripts/start-local-docker-stack-manual.sh rotate-key \
+    --url https://xxx.cn-beijing.maas.aliyuncs.com/compatible-mode/v1 \
+    --apply --confirm rotate-llm-key
 
 改模型名：编辑 deploy/local/.env.local 的 QWEN_MODEL / RUNTIME_MODEL，然后：
   ./scripts/start-local-docker-stack-manual.sh 3-higress

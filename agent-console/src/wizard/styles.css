@@ -1075,6 +1075,18 @@ body {
   flex-wrap: wrap;
 }
 
+.wz-build.is-compact .el-card__body {
+  display: none;
+  padding: 0;
+}
+
+.wz-build__elapsed {
+  margin-left: auto;
+  font-size: 12px;
+  font-weight: 400;
+  color: var(--wz-text-weak);
+}
+
 .wz-build__steps {
   list-style: none;
   margin: 0;

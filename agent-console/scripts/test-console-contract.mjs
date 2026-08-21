@@ -153,6 +153,25 @@ try {
   if (pub.clientCode !== 'acme_beauty' || pub.runtimeAgentId !== 'beauty_wecom_cs-acme_beauty') {
     throw new Error('publicationFromSnapshot missed import_result binding: ' + JSON.stringify(pub));
   }
+  const { isPublishGateTerminal, leaderBlockedMessage } = await import('../src/shared/build-progress.js?gate=' + Date.now());
+  if (isPublishGateTerminal('RUNNING') || isPublishGateTerminal('DISPATCHED')) {
+    throw new Error('RUNNING/DISPATCHED must keep waiting for the publish gate');
+  }
+  if (!isPublishGateTerminal('WAITING_HUMAN') || !isPublishGateTerminal('FAILED')) {
+    throw new Error('WAITING_HUMAN/FAILED must stop the publish-gate wait');
+  }
+  const stalled = leaderBlockedMessage({
+    messages: [{ for_run: true, body: 'RUN_BLOCKED mcp timeout' }],
+  });
+  if (!stalled.startsWith('RUN_BLOCKED')) throw new Error('leaderBlockedMessage missed RUN_BLOCKED');
+  const recovered = leaderBlockedMessage({
+    messages: [
+      { for_run: true, body: 'RUN_BLOCKED mcp timeout' },
+      { for_run: true, body: '* REPORT status=BLOCKED_HUMAN' },
+      { for_run: true, body: 'APPROVAL_REQUIRED run_id=r1 approval_id=a1' },
+    ],
+  });
+  if (recovered) throw new Error('APPROVAL_REQUIRED must clear a prior RUN_BLOCKED: ' + recovered);
 
   const events = [];
   await consumeSse(new Response('event: message\r\ndata: {"delta":"ok"}\r\n\r\nevent: done\r\ndata: {}\r\n\r\n'), (event, data) => events.push([event, data]));

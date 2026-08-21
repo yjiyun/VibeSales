@@ -156,6 +156,40 @@ public final class MarketingAgentRuntimeApiClient {
         return post("/intent-queue/sync", body);
     }
 
+    /**
+     * {@code POST /customer-profile/merge}，把本轮抽取到的画像增量合并进客户主档。
+     *
+     * <p>对应原 Coze 节点 {@code 2604003 U15-02C}。语义是<b>增量合并</b>而不是覆写——body 里的
+     * {@code set}/{@code addToSet}/{@code removeFromSet}/{@code clearFields}/{@code domainProfiles}
+     * 各自表达一种合并动作，所以"本轮没抽到东西"必须在调用前就被挡掉（见
+     * {@code MergeCustomerProfileTool} 的门禁），而不是发一个空 body 让后端去猜。
+     */
+    public RuntimeApiResponse mergeCustomerProfile(Map<String, Object> body) {
+        return post("/customer-profile/merge", body);
+    }
+
+    /**
+     * {@code POST /diagnoses}，写入一条推荐诊断记录。
+     *
+     * <p>对应原 Coze 节点 {@code 1559861 U6-14}。原节点 {@code retryTimes: 3} 且<b>不带任何幂等键</b>，
+     * 三次重试会写出三条诊断记录，这里补上：{@code idempotencyKey} 同时进 {@code Idempotency-Key}
+     * 请求头与 request body。
+     *
+     * <p><b>未核实项</b>：后端是否真的按这个键去重尚未实测（Java 侧此前从未调过这个端点）。两处都带
+     * 是刻意的——后端无论按 header 还是按 body 字段实现去重都能生效；若两处都不认，至少留痕可对账，
+     * 但重复写的风险仍在，需要后端确认后才能撤掉这条注释。
+     */
+    public RuntimeApiResponse createDiagnosis(Map<String, Object> body, String idempotencyKey) {
+        String key = idempotencyKey == null ? "" : idempotencyKey.trim();
+        if (key.isEmpty()) {
+            log.warn("createDiagnosis called without idempotency key, duplicate writes are possible");
+            return post("/diagnoses", body);
+        }
+        Map<String, Object> payload = new LinkedHashMap<>(body);
+        payload.put("idempotencyKey", key);
+        return post("/diagnoses", payload, Map.of("Idempotency-Key", key));
+    }
+
     private RuntimeApiResponse get(String path, Map<String, String> query) {
         String url = baseUrl + ROUTE_PREFIX + path + toQueryString(query);
         try {
@@ -182,6 +216,11 @@ public final class MarketingAgentRuntimeApiClient {
     }
 
     private RuntimeApiResponse post(String path, Map<String, Object> body) {
+        return post(path, body, Map.of());
+    }
+
+    private RuntimeApiResponse post(
+            String path, Map<String, Object> body, Map<String, String> extraHeaders) {
         String url = baseUrl + ROUTE_PREFIX + path;
         try {
             String payload = objectMapper.writeValueAsString(body);
@@ -192,6 +231,14 @@ public final class MarketingAgentRuntimeApiClient {
                             .header("Accept", "application/json")
                             .header("Content-Type", "application/json")
                             .POST(HttpRequest.BodyPublishers.ofString(payload, StandardCharsets.UTF_8));
+            for (Map.Entry<String, String> header : extraHeaders.entrySet()) {
+                if (header.getValue() != null && !header.getValue().isBlank()) {
+                    // 不接收返回值：Builder 是可变对象，header() 返回的就是它自己。写成
+                    // builder = builder.header(...) 会让 builder 不再是 effectively final，
+                    // 下面的 lambda 就捕获不到它
+                    builder.header(header.getKey(), header.getValue());
+                }
+            }
             return ToolTelemetry.traceApi(
                     "marketing_agent_runtime",
                     "POST",

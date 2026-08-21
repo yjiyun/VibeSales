@@ -69,7 +69,7 @@ async function main() {
   const bound = await store.resolvePublished(bp.client_code, boundUser, bp.runtime_agent_id);
   if (!bound || bound.status !== 'PUBLISHED') throw new Error('P3C sandbox PUBLISHED binding missing');
   if (runtimeSafeId('@developer:local') !== 'developer_local') throw new Error('runtimeSafeId drifted from sandbox chat');
-  const broken = JSON.parse(JSON.stringify(bp.payload)); broken.tools.allow = ['crm_query'];
+  const broken = JSON.parse(JSON.stringify(bp.payload)); broken.tools.allow = ['no_such_tool'];
   const p3cSvc = app.get((await import('../src/p3c/p3c.service')).P3cService);
   const check = await p3cSvc.blueprintSelfcheck(broken);
   if (check.checks.find(c => c.id === 9)?.ok !== false) throw new Error('blueprint selfcheck #9 must fail');

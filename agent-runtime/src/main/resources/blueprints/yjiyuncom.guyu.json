@@ -1,0 +1,271 @@
+{
+  "_说明": "谷雨美肤师真实资产蓝图（第 1 步产物）。资产来源是 Coze 工作流 guyudefinal_dev_0725_31（116 节点 / 157 边）的真实业务逻辑，设计依据见 docs-agent-runtime/03-Tool与Skill设计/谷雨Coze工作流真实Blueprint资产提取设计.md。",
+  "_作用域说明": "注册在 cluster=test 下：测试集群固定就是 test，测试阶段账号固定 clientCode=yjiyuncom，另开一个 cluster 只会让工作台默认选不到这份资产。这里的 cluster 必须与 index.json 里该条目的 cluster 一字不差，否则 AgentBlueprintValidator 会按 cluster mismatch 直接报 error。代价是 index.json 出现三条 clientCode=yjiyuncom + cluster=test 条目（yjiyuncom.test.json / yjiyuncom.multistage.json / 本文件）：不带 runtimeAgentId 时精确匹配取列表第一条，也就是 yjiyuncom.test.json，要跑本蓝图必须带 runtimeAgentId=yjiyuncom_guyu_agent。那份重复注册同时也是 2 个已知 AgentBlueprintRepositoryTest 失败的根因，仍待定夺。",
+  "_边界说明": "第 1 步只补资产载体，不改编排。因此 stages[] 严格保持 CustomerServiceOrchestratorAgent 当前 requireStage 的三个 key（recovery_confirm / intent_route / business_process）加两端 tool 阶段，能被现有 runtime 直接跑通。九码意图枚举、reply-humanizer 出口阶段、过敏/售后专链等扩展留给第 4 步。",
+  "_Rule说明": "六条规则已在第 3 步全部接线，rules[] 不再产生任何 warning。剩余 4 条 warning 全部来自 tools（mergeCustomerProfile / createDiagnosis 各 2 条），只能在第 4 步接上收口调用点后消除。",
+  "blueprintId": "yjiyuncom_guyu_v1",
+  "version": 1,
+  "clientCode": "yjiyuncom",
+  "cluster": "test",
+  "runtimeAgentId": "yjiyuncom_guyu_agent",
+  "meta": {
+    "industry": "美妆护肤-guyu",
+    "scenarios": ["BEAUTY_SKINCARE"],
+    "generatedBy": "coze-workflow-extract:guyudefinal_dev_0725_31",
+    "runId": "guyu-asset-extract-v1"
+  },
+  "runtimeMode": "multi_stage",
+  "prompt": {
+    "_说明": "顶层 prompt 改为外联形式，继续保留与设计文档 §3.1 一致的拆分边界：SOUL.md 放跨节点高频复用的人设与文风，AGENTS.multi_stage.md 放多阶段共用的边界、安全与输出纪律。这样 multi_stage 与 single_agent 可共享 soulMd，同时各自维护独立 agentsMd。",
+    "soulMdRef": "prompts/blueprints/guyu/SOUL.md",
+    "agentsMdRef": "prompts/blueprints/guyu/AGENTS.multi_stage.md",
+    "knowledgeMd": "（本工程走百炼知识库检索，knowledgeMd 不参与提示词投影。四个数据集的内容边界待人工确认，见设计文档 §7。）"
+  },
+  "skills": [
+    {
+      "_说明": "7 个业务分支 Skill + 3 个横切 Skill，全部走 library source，正文在 resources/skills/<name>/SKILL.md。用 library 而不是 inline：这些正文要长期被运营维护，放文件里可 diff 可评审，塞进 JSON 字符串没法看。",
+      "name": "recommendation-consulting",
+      "source": "library",
+      "ref": "skills/recommendation-consulting",
+      "skillMd": null
+    },
+    {
+      "name": "product-usage-qa",
+      "source": "library",
+      "ref": "skills/product-usage-qa",
+      "skillMd": null
+    },
+    {
+      "name": "after-sales-return",
+      "source": "library",
+      "ref": "skills/after-sales-return",
+      "skillMd": null
+    },
+    {
+      "name": "allergy-triage",
+      "source": "library",
+      "ref": "skills/allergy-triage",
+      "skillMd": null
+    },
+    {
+      "name": "membership-benefits",
+      "source": "library",
+      "ref": "skills/membership-benefits",
+      "skillMd": null
+    },
+    {
+      "name": "package-card",
+      "source": "library",
+      "ref": "skills/package-card",
+      "skillMd": null
+    },
+    {
+      "name": "daily-and-fallback",
+      "source": "library",
+      "ref": "skills/daily-and-fallback",
+      "skillMd": null
+    },
+    {
+      "_说明": "横切 Skill。reply-humanizer 在原工作流里入度 8，是全图最高的节点，所有分支回复都过它。",
+      "name": "reply-humanizer",
+      "source": "library",
+      "ref": "skills/reply-humanizer",
+      "skillMd": null
+    },
+    {
+      "name": "recovery-handling",
+      "source": "library",
+      "ref": "skills/recovery-handling",
+      "skillMd": null
+    },
+    {
+      "name": "human-handoff",
+      "source": "library",
+      "ref": "skills/human-handoff",
+      "skillMd": null
+    }
+  ],
+  "rules": [
+    {
+      "_说明": "唯一已接线 Rule。词表取自 114759 U14-01 / 2603107 U2-05 的续接判定。",
+      "ruleCode": "recovery-detection",
+      "enabled": true,
+      "params": {
+        "continuationKeywords": [
+          "继续",
+          "继续说",
+          "刚才",
+          "接着",
+          "上次",
+          "前面",
+          "上次那套",
+          "之前推荐的",
+          "刚说的那个",
+          "就这个",
+          "还是那个"
+        ]
+      }
+    },
+    {
+      "_说明": "源 184573 U6-07（23025 字符，最重要的一个 code 节点）。score 为 5 槽位等权计数；canRecommend 公式与一级需求白名单、confidence 阈值 0.8 都是 Java 实现常量，这里只放轮次强制阈值。",
+      "ruleCode": "profile-completeness",
+      "enabled": true,
+      "params": {
+        "forcedRoundThreshold": 3
+      }
+    },
+    {
+      "_说明": "源 184573 U6-07 + 138324 U6-05 + 109304 U6-09。followupAllowed = !(collectTurns >= 3 || (wantsDirectReco && canRecommend))。追问候选只有 budget / skinType / concerns 三个字段。",
+      "ruleCode": "follow-up-round-limit",
+      "enabled": true,
+      "params": {
+        "maxFollowUpRounds": 3
+      }
+    },
+    {
+      "_说明": "源 115297 U3-02 结果自检，已接入编排链（orchestration:rule.intent.priority）。九码优先级表是业务纪律，不可配；三张关键词表已开放在 PARAM_KEYS（intentKeywords / allergySymptomKeywords / allergyUsageMarkers），这里全部留空表示沿用 Java 默认词表。",
+      "ruleCode": "intent-priority",
+      "enabled": true,
+      "params": {}
+    },
+    {
+      "_说明": "源 138324 U6-05 / 900104 U9-06 / 152445 U10-11。已接入编排链（orchestration:rule.handoff.trigger），在业务处理之前算完、结论进业务处理提示词。四个触发条件都是安全阀而不是租户偏好，所以 params 为空且 PARAM_KEYS 里刻意不给它开口子。其中「客户明确要求人工」由 intentCode==transfer_to_human 推出，另外三个由意图识别阶段输出 severeAllergy / sensitiveMedicalContext / emotionalOrOutOfScope。",
+      "ruleCode": "human-handoff-trigger",
+      "enabled": true,
+      "params": {}
+    },
+    {
+      "_说明": "源 2603209 U5-09A / 2603207 U5-05A。实例决策只有 continue_existing 与 create_new_instance 两值；continue_existing 缺 targetIntentKey 时降级新开实例。已接入编排链（orchestration:rule.queue.version，在 result_close.queue 写回之前重读远端 queueVersion 比对）：两次 syncIntentQueue 之间靠 effectiveQueueVersion 串行，属乐观锁，不可合并；检测到冲突改用远端最新版本号写回，不拿旧版本号强行覆盖。",
+      "ruleCode": "queue-version-guard",
+      "enabled": true,
+      "params": {}
+    },
+    {
+      "_说明": "源 U15 收口段 + 107354 U6-15。writeState 四态判定顺序即优先级：parse_failed > success > skipped > failed；writeOk 需 success===true 且 skipped!==true 且 diagnosisId 非空三条件全满足；skipped 不触发降级。已接入编排链（orchestration:rule.closure.required_fields，在 result_close.history 与 result_close.queue 两次写回之前）：检查摘要/意图/任务动作/queueVersion 四项，queueVersion 取乐观锁节点算出的 effectiveQueueVersion（不是前置上下文那份，否则检查的和写的不是同一个值）。四项里只有摘要为空会真的拦住写回，其余三项只留痕——首轮会话本来就没有 queueVersion，拿整体完整度当闸门会让任务板永远建不起来。四个必填字段是解析前提而不是租户偏好，所以 params 为空且 PARAM_KEYS 里不给它开口子。",
+      "ruleCode": "closure-writeback-required-fields",
+      "enabled": true,
+      "params": {}
+    }
+  ],
+  "tools": {
+    "_说明": "mergeCustomerProfile（POST /customer-profile/merge，源 2604003 U15-02C）与 createDiagnosis（POST /diagnoses，源 1559861 U6-14）已在第 2 步补齐 Java 客户端与 Tool 类，但编排链还没有调用点，因此登记在 ToolCapabilityCatalog.IMPLEMENTED_BUT_UNWIRED_TOOLS，validator 各出一条 warning。第 4 步接上收口调用后平移进 ORCHESTRATION_TOOLS，warning 消失即为验收信号。",
+    "allow": [
+      "createOrResumeSession",
+      "getHistorySummary",
+      "getCustomerProfile",
+      "getIntentQueue",
+      "getRuleContext",
+      "mergeCustomerProfile",
+      "createDiagnosis",
+      "saveHistorySummary",
+      "syncIntentQueue",
+      "memory_search"
+    ],
+    "deny": ["execute", "write_file", "read_file"],
+    "mcpServers": []
+  },
+  "runtime": {
+    "model": "deepseek-v4-flash",
+    "isolationScope": "USER",
+    "maxContextTokens": 32000
+  },
+  "stages": [
+    {
+      "_说明": "对应 U1 段（196956 U1-06 建会话、1810950 U1-08 取历史、2605001 U1-08A 取画像、178585 U6-01 取规则上下文）。原工作流一轮读 GET /intent-queue 四次（U2-03 / U2-03B / U5-01 / U14-03，参数完全相同），这里合并成一次读，结果由阶段上下文传递。",
+      "stageKey": "preload_context",
+      "displayName": "前置上下文准备",
+      "stageType": "tool",
+      "description": "固定准备本轮需要的会话、历史摘要、画像、任务板与规则上下文，不由 LLM 决定。",
+      "toolsAllow": [
+        "createOrResumeSession",
+        "getHistorySummary",
+        "getIntentQueue",
+        "getCustomerProfile",
+        "getRuleContext"
+      ],
+      "outputContract": "PreloadContextOutput",
+      "next": "recovery_confirm"
+    },
+    {
+      "_说明": "对应 U14 段。恢复必须二次确认（recoverMode 固定 confirm_then_resume），不允许静默直接恢复。这个 stage 判不出结论时，编排层回落到 RecoveryDetectionRule 的确定性结果（reason=fallback-from-rule）。",
+      "stageKey": "recovery_confirm",
+      "displayName": "恢复确认",
+      "stageType": "llm",
+      "description": "当存在 recoveryPending 或活跃任务时，窄目标判断当前消息是否在回复上一轮的问题。",
+      "enabledWhen": "entrySignals.recoveryPending == true || entrySignals.awaitingUserReply == true",
+      "promptRef": "prompt.stage.guyu-recovery-confirm",
+      "skills": ["recovery-handling"],
+      "rules": ["recovery-detection"],
+      "toolsAllow": ["getHistorySummary", "getIntentQueue"],
+      "outputContract": "RecoveryConfirmOutput",
+      "onResult": {
+        "reply_to_previous": "business_process",
+        "not_reply": "intent_route"
+      }
+    },
+    {
+      "_说明": "对应 103669 U3-01 意图识别 + 115297 U3-02 结果自检。这是纯结构化判断，按设计文档 §4.3 不挂业务 Skill、不给写回 Tool。判不出结论时编排层回落到关键词 heuristic（reason=fallback-from-heuristic）。",
+      "stageKey": "intent_route",
+      "displayName": "意图识别",
+      "stageType": "llm",
+      "description": "未命中恢复续接时做九码意图识别，输出主意图、优先级分档与命中证据。",
+      "promptRef": "prompt.stage.guyu-intent-route",
+      "rules": ["intent-priority"],
+      "toolsAllow": ["getHistorySummary", "getIntentQueue", "getCustomerProfile"],
+      "outputContract": "IntentRouteOutput",
+      "onResult": {
+        "transfer_to_human": "business_process",
+        "allergy_quality": "business_process",
+        "return_exchange": "business_process",
+        "product_usage": "business_process",
+        "membership": "business_process",
+        "package_card": "business_process",
+        "product_recommend": "business_process",
+        "daily_response": "business_process",
+        "out_of_scope": "business_process"
+      }
+    },
+    {
+      "_说明": "第 1 步刻意把 7 条业务分支收在一个 stage 里，靠 Skill 集合按意图分流，因为 CustomerServiceOrchestratorAgent 当前只 requireStage 这三个 key，拆成 7 个 stage 需要先改编排（第 4 步）。reply-humanizer 挂在这里承担出口润色（原工作流 147570 U11-01）。",
+      "stageKey": "business_process",
+      "displayName": "业务处理",
+      "stageType": "llm",
+      "description": "按已确定的九码意图选择对应 Skill 完成本轮处理，并按 reply-humanizer 自查后输出回复草稿。",
+      "promptRef": "prompt.stage.guyu-business-process",
+      "skills": [
+        "recommendation-consulting",
+        "product-usage-qa",
+        "after-sales-return",
+        "allergy-triage",
+        "membership-benefits",
+        "package-card",
+        "daily-and-fallback",
+        "human-handoff",
+        "reply-humanizer"
+      ],
+      "rules": [
+        "profile-completeness",
+        "follow-up-round-limit",
+        "human-handoff-trigger"
+      ],
+      "toolsAllow": ["getCustomerProfile", "getRuleContext", "getIntentQueue"],
+      "outputContract": "BusinessProcessOutput",
+      "next": "result_close"
+    },
+    {
+      "_说明": "对应 U15 收口段。写回顺序 mergeCustomerProfile -> createDiagnosis -> saveHistorySummary -> syncIntentQueue，顺序不可换：主档合并要在诊断落库前完成（诊断记录引用画像字段），syncIntentQueue 必须最后（它带乐观锁 queueVersion）。前两个当前是 implemented_not_wired，声明在这里只出 warning 不生效。明确用 Tool 收口而不是再加一个收口 LLM。两条 rule 都已接线，本组内实际执行顺序是 rule.queue.version -> rule.closure.required_fields -> saveHistorySummary -> syncIntentQueue：乐观锁先算是因为必填项校验要检查真正会回传的那个版本号。",
+      "stageKey": "result_close",
+      "displayName": "结果收口",
+      "stageType": "tool",
+      "description": "校验业务处理阶段输出并做确定性写回：先合并主档画像与诊断，再落历史摘要，最后按乐观锁同步任务板。",
+      "rules": ["closure-writeback-required-fields", "queue-version-guard"],
+      "toolsAllow": [
+        "mergeCustomerProfile",
+        "createDiagnosis",
+        "saveHistorySummary",
+        "syncIntentQueue"
+      ],
+      "outputContract": "FinalChatResponse"
+    }
+  ]
+}

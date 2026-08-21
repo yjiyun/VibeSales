@@ -1,11 +1,11 @@
 /** 向导接待员可选模型。与 agent-console `src/shared/wizard-models.js` 保持同一份名单。 */
 export const WIZARD_LLM_MODELS = [
-  'deepseek-v4-flash-0731',
+  'deepseek-v4-flash',
 ] as const;
 
 export type WizardLlmModel = (typeof WIZARD_LLM_MODELS)[number];
 
-export const DEFAULT_WIZARD_LLM_MODEL: WizardLlmModel = 'deepseek-v4-flash-0731';
+export const DEFAULT_WIZARD_LLM_MODEL: WizardLlmModel = 'deepseek-v4-flash';
 
 export function resolveWizardLlmModel(value?: string): WizardLlmModel {
   const raw = String(value ?? '').trim();

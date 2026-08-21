@@ -37,6 +37,8 @@ rules=[
     "Bash(**)",
     "RecallHistoryPython(**)",
 ]
+# 注意：qwenpaw 把 RecallHistory（python_name=recall_history）注册为 tool_type=internal，
+# policy.evaluate Phase 0 对 internal 直接 ALLOW，user_rules 无法 DENY。翻历史只能靠 Skill 禁令。
 for match in reversed(rules):
     governor.add_rule(GovernanceRule(match=match,action=GovernanceAction.DENY,reason=marker))
 
@@ -58,10 +60,14 @@ for tool,target in checks.items():
     decision=governor.assert_policy(ToolCallSpec(tool,target,"default","agentteams-policy-check"))
     if decision.action is not GovernanceAction.DENY or decision.source!="user_rules" or decision.reason!=marker:
         raise RuntimeError(tool+" mutation path is not denied")
+# 回归：确认 RecallHistory 仍被 Phase 0 放行（平台限制，Skill 必须禁），避免误以为治理能挡住。
+recall=governor.assert_policy(ToolCallSpec("RecallHistory",'{"op":"search","query":"x"}',"default","agentteams-policy-check"))
+if recall.action is GovernanceAction.DENY:
+    raise RuntimeError("unexpected: RecallHistory became deniable; update Skill/docs")
 read=governor.assert_policy(ToolCallSpec("Read",str(task_result),"default","agentteams-policy-check"))
 if read.action is not GovernanceAction.ALLOW:
     raise RuntimeError("read-only task artifact access must remain allowed")
-print(json.dumps({"workspace":workspace.name,"denied":list(checks),"read":"allow"}))
+print(json.dumps({"workspace":workspace.name,"denied":list(checks),"read":"allow","recall_history":"internal-allow-skill-must-forbid"}))
 `;
 const leaderCheck=String.raw`
 import json,pathlib,urllib.request,yaml

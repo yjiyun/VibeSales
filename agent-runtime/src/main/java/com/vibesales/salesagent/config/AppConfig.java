@@ -50,6 +50,7 @@ public record AppConfig(
         String appName,
         boolean compatV1ChatAuthEnabled,
         String compatV1ChatAuthToken,
+        String runtimeAdminToken,
         boolean otelEnabled,
         String otelEndpoint,
         String otelLicenseKey,
@@ -63,7 +64,7 @@ public record AppConfig(
                 ConfigValueResolver.getBooleanOrDefault(
                         !compatV1ChatAuthToken.isBlank(), "AGENT_COMPAT_V1_CHAT_AUTH_ENABLED");
         return new AppConfig(
-                ConfigValueResolver.getOrDefault("deepseek-v4-flash-0731", "AGENT_MODEL_NAME"),
+                ConfigValueResolver.getOrDefault("deepseek-v4-flash", "AGENT_MODEL_NAME"),
                 ConfigValueResolver.getOrDefault(
                         "https://token-plan.cn-beijing.maas.aliyuncs.com/compatible-mode/v1",
                         "AGENT_MODEL_BASE_URL"),
@@ -119,6 +120,7 @@ public record AppConfig(
                 ConfigValueResolver.getOrDefault("sales-customer-agent", "AGENT_APP_NAME"),
                 compatV1ChatAuthEnabled,
                 compatV1ChatAuthToken,
+                ConfigValueResolver.get("AGENT_RUNTIME_ADMIN_TOKEN", "RUNTIME_ADMIN_TOKEN"),
                 "true".equalsIgnoreCase(ConfigValueResolver.getOrDefault("false", "AGENT_OTEL_ENABLED")),
                 ConfigValueResolver.get("AGENT_OTEL_ENDPOINT"),
                 ConfigValueResolver.get("AGENT_OTEL_LICENSE_KEY"),
@@ -180,6 +182,11 @@ public record AppConfig(
 
     public boolean blueprintJdbcConfigured() {
         return !blueprintJdbcUrl.isBlank() && !blueprintJdbcUsername.isBlank();
+    }
+
+    /** ingest 端点鉴权：需要 admin token 且 blueprint 落库目标（JDBC）已配置。 */
+    public boolean ingestConfigured() {
+        return !runtimeAdminToken.isBlank() && blueprintJdbcConfigured();
     }
 
     public boolean mysqlConfigured() {

@@ -186,11 +186,30 @@ public final class AgentBlueprintRepository {
             String runtimeAgentId,
             String version,
             BlueprintSelection selection) {
+        return resolve(clientCode, cluster, sceneCode, runtimeAgentId, version, selection, "");
+    }
+
+    /**
+     * 带调用方 {@code userId} 的解析入口。
+     *
+     * <p>供真实试聊路径使用：{@code userId} 是当前登录/发起对话的身份，交给来源层去核对
+     * {@code agent_binding}（谁批准发布、谁在跟这份蓝图对话）。调试/管理类调用（不代表某个真实用户）
+     * 走上面不带 {@code userId} 的重载即可，内部按空字符串处理，直接降级为按租户作用域查找。
+     */
+    public Optional<ResolvedBlueprint> resolve(
+            String clientCode,
+            String cluster,
+            String sceneCode,
+            String runtimeAgentId,
+            String version,
+            BlueprintSelection selection,
+            String userId) {
         String normalizedClientCode = safe(clientCode);
         String normalizedCluster = safe(cluster);
         String normalizedSceneCode = safe(sceneCode);
         String normalizedRuntimeAgentId = safe(runtimeAgentId);
         String normalizedVersion = safe(version);
+        String normalizedUserId = safe(userId);
         Optional<SelectionTarget> pinnedTarget = selectionTarget(selection);
         if (pinnedTarget.isPresent()) {
             SelectionTarget target = pinnedTarget.get();
@@ -211,7 +230,8 @@ public final class AgentBlueprintRepository {
                                 normalizedCluster,
                                 normalizedSceneCode,
                                 normalizedRuntimeAgentId,
-                                normalizedVersion);
+                                normalizedVersion,
+                                normalizedUserId);
         if (resolved.isEmpty()) {
             return Optional.empty();
         }
@@ -223,7 +243,7 @@ public final class AgentBlueprintRepository {
             throw new IllegalStateException(
                     "blueprint " + handle.sourceId() + " failed validation: " + report.errorSummary());
         }
-        String systemPrompt = promptProjector.project(blueprint);
+        BlueprintPromptProjector.Projection prompt = promptProjector.projectPrompt(blueprint);
         BlueprintSkillProjector.Projection projection = skillProjector.project(blueprint);
         BlueprintRuleProjector.Projection rules = ruleProjector.project(blueprint);
         return Optional.of(
@@ -238,10 +258,52 @@ public final class AgentBlueprintRepository {
                         handle.matchLevel(),
                         handle.sourceType(),
                         handle.sourceId(),
-                        systemPrompt,
+                        prompt.agentsMd(),
+                        prompt.soulMd(),
+                        prompt.systemPrompt(),
                         projection,
                         rules,
                         report));
+    }
+
+    /**
+     * 用调用方直传的 Blueprint（不经 {@link BlueprintSource} 查询）走同一套校验 + 投影尾段。
+     *
+     * <p>供 {@code /api/v1/dryrun} 使用：P4 dry-run 传入的是当次生成、尚未（或刚)持久化的 Blueprint
+     * 原文，不能也不需要按 clientCode/cluster 反查——直接用这份原文校验、投影，构造出与
+     * {@link #resolve} 完全同构的 {@link ResolvedBlueprint}，交给编排层跑同一条执行主链。
+     *
+     * @throws IllegalStateException 校验失败时直接抛出，与 {@link #resolve} 同口径
+     */
+    public ResolvedBlueprint resolveAdHoc(AgentBlueprint blueprint) {
+        String clientCode = safe(blueprint.clientCode());
+        String cluster = blueprint.clusterOrEmpty();
+        BlueprintValidationReport report = validator.validate(blueprint, clientCode, cluster);
+        if (!report.valid()) {
+            throw new IllegalStateException(
+                    "ad-hoc blueprint " + safe(blueprint.blueprintId()) + " failed validation: "
+                            + report.errorSummary());
+        }
+        BlueprintPromptProjector.Projection prompt = promptProjector.projectPrompt(blueprint);
+        BlueprintSkillProjector.Projection projection = skillProjector.project(blueprint);
+        BlueprintRuleProjector.Projection rules = ruleProjector.project(blueprint);
+        return new ResolvedBlueprint(
+                blueprint,
+                clientCode,
+                cluster,
+                "",
+                safe(blueprint.runtimeAgentId()),
+                String.valueOf(blueprint.version()),
+                "",
+                AgentBlueprintRepository.MATCH_EXACT,
+                "ad_hoc",
+                "ad_hoc:" + safe(blueprint.blueprintId()),
+                prompt.agentsMd(),
+                prompt.soulMd(),
+                prompt.systemPrompt(),
+                projection,
+                rules,
+                report);
     }
 
     /** 只做加载 + 校验，不做投影；供 debug 接口在校验失败时也能返回原始内容与错误清单。 */

@@ -3,6 +3,7 @@ package com.agentteams.salesagent.blueprint;
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertFalse;
 import static org.junit.jupiter.api.Assertions.assertNotEquals;
+import static org.junit.jupiter.api.Assertions.assertThrows;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
 import java.util.Optional;
@@ -124,6 +125,18 @@ class AgentBlueprintRepositoryTest {
     }
 
     @Test
+    void shouldResolvePromptAssetsFromRefs() {
+        ResolvedBlueprint guyu =
+                repository.resolve(TEST_CLIENT, TEST_CLUSTER, "", "yjiyuncom_guyu_agent", "")
+                        .orElseThrow();
+
+        assertTrue(guyu.soulMd().contains("你是谷雨的美肤顾问「小雨滴」"));
+        assertTrue(guyu.agentsMd().contains("每个阶段的输出形状由该阶段的 outputContract 决定"));
+        assertTrue(guyu.systemPrompt().contains("你是谷雨的美肤顾问「小雨滴」"));
+        assertTrue(guyu.systemPrompt().contains("转人工纪律"));
+    }
+
+    @Test
     void shouldProjectInlineAndLibrarySkillsWithSourceTrace() {
         ResolvedBlueprint beauty =
                 repository.resolve(TEST_CLIENT, TEST_CLUSTER, "", TEST_RUNTIME_AGENT_ID, "").orElseThrow();
@@ -145,9 +158,14 @@ class AgentBlueprintRepositoryTest {
 
         // recovery-detection 已接线：投影出实例，租户词表真实生效
         assertTrue(rules.recoveryDetectionRule().isPresent());
-        assertEquals(java.util.List.of("recovery-detection"), rules.effectiveRuleCodes());
-        // profile-completeness 已实现但编排链无调用点：只留痕
-        assertEquals(java.util.List.of("profile-completeness"), rules.unwiredRuleCodes());
+        // profile-completeness 也已接线（orchestration:rule.profile.gate），阈值被覆盖所以投影出实例
+        assertEquals(
+                java.util.List.of("recovery-detection", "profile-completeness"),
+                rules.effectiveRuleCodes());
+        assertTrue(rules.profileCompletenessRule().isPresent());
+        assertEquals(3, rules.profileCompletenessRule().orElseThrow().forcedRoundThreshold());
+        // 这份蓝图声明的三条规则里已经没有"实现了但没接线"的了
+        assertEquals(java.util.List.of(), rules.unwiredRuleCodes());
         // human-handoff-trigger 蓝图里显式 enabled=false
         assertEquals(java.util.List.of("human-handoff-trigger"), rules.disabledRuleCodes());
         assertEquals("disabled_by_blueprint", rules.classification().get("human-handoff-trigger"));
@@ -181,13 +199,16 @@ class AgentBlueprintRepositoryTest {
     @Test
     void shouldListAllRegisteredScopes() {
         assertTrue(repository.hasAnyBlueprint());
-        assertEquals(4, repository.listScopes().size());
+        assertEquals(6, repository.listScopes().size());
+        // 同一 client/cluster 下允许多份 blueprint 并存，靠 runtimeAgentId 区分：
+        // 例如 yjiyuncom/test 里既有单阶段，也有多阶段与 guyu 的两种模式变体。
         assertTrue(
                 repository.listScopes().stream()
                         .anyMatch(
                                 scope ->
                                         TEST_CLIENT.equals(scope.get("clientCode"))
-                                                && "multistage".equals(scope.get("cluster"))));
+                                                && TEST_CLUSTER.equals(scope.get("cluster"))
+                                                && "BEAUTY_SKINCARE".equals(scope.get("runtimeAgentId"))));
     }
 
     @Test
@@ -245,6 +266,71 @@ class AgentBlueprintRepositoryTest {
 
     @Test
     void shouldReturnEmptyWhenRuntimeAgentIdDoesNotMatchBlueprint() {
-        assertTrue(repository.resolve(TEST_CLIENT, TEST_CLUSTER, "", DEFAULT_RUNTIME_AGENT_ID, "").isEmpty());
+        // 该 runtimeAgentId 在任何蓝图里都不存在，两级路由都不该兜住它
+        assertTrue(repository.resolve(TEST_CLIENT, TEST_CLUSTER, "", "no_such_agent", "").isEmpty());
+        assertTrue(repository.resolve(TEST_CLIENT, "", "", "no_such_agent", "").isEmpty());
+    }
+
+    @Test
+    void clusterFallbackShouldStillHonourRuntimeAgentId() {
+        // 请求 cluster=test 但带租户默认蓝图的 runtimeAgentId：test 集群下没有它，
+        // 于是降级到 cluster 为空的默认蓝图并命中——降级不等于放宽 runtimeAgentId 校验
+        ResolvedBlueprint fallback =
+                repository.resolve(TEST_CLIENT, TEST_CLUSTER, "", DEFAULT_RUNTIME_AGENT_ID, "").orElseThrow();
+
+        assertEquals("yjiyuncom_default_v1", fallback.blueprintId());
+        assertEquals(DEFAULT_RUNTIME_AGENT_ID, fallback.runtimeAgentId());
+        assertEquals(AgentBlueprintRepository.MATCH_FALLBACK, fallback.matchLevel());
+    }
+
+    @Test
+    void resolveAdHocShouldValidateAndProjectDirectlyFromPayload() {
+        // dry-run 场景：Blueprint 原文可能还没（或刚)落库，不能也不需要按作用域反查
+        AgentBlueprint adHoc =
+                new AgentBlueprint(
+                        "bp_ad_hoc_test",
+                        1,
+                        "ad_hoc_client",
+                        "",
+                        "ad_hoc_agent",
+                        new AgentBlueprint.Meta("beauty", java.util.List.of("BEAUTY_SKINCARE"), "test", "run-1"),
+                        new AgentBlueprint.Prompt("# 工作准则\n测试准则", null, "# 身份\n测试身份", null, ""),
+                        java.util.List.of(),
+                        java.util.List.of(),
+                        new AgentBlueprint.Tools(java.util.List.of(), java.util.List.of(), java.util.List.of()),
+                        new AgentBlueprint.RuntimeSpec("deepseek-v4-flash", "USER", 8000),
+                        null,
+                        java.util.List.of());
+
+        ResolvedBlueprint resolved = repository.resolveAdHoc(adHoc);
+
+        assertEquals("bp_ad_hoc_test", resolved.blueprintId());
+        assertEquals("ad_hoc_client", resolved.requestedClientCode());
+        assertEquals("ad_hoc_agent", resolved.runtimeAgentId());
+        assertEquals(AgentBlueprintRepository.MATCH_EXACT, resolved.matchLevel());
+        assertTrue(resolved.systemPrompt().contains("测试身份"));
+        assertTrue(resolved.systemPrompt().contains("测试准则"));
+    }
+
+    @Test
+    void resolveAdHocShouldThrowWhenValidationFails() {
+        // clientCode 缺失即校验失败——ad-hoc 路径必须保持与 resolve() 一致的失败即抛出口径
+        AgentBlueprint invalid =
+                new AgentBlueprint(
+                        "bp_invalid",
+                        1,
+                        "",
+                        "",
+                        "ad_hoc_agent",
+                        null,
+                        new AgentBlueprint.Prompt("agents", null, "soul", null, ""),
+                        java.util.List.of(),
+                        java.util.List.of(),
+                        null,
+                        null,
+                        null,
+                        java.util.List.of());
+
+        assertThrows(IllegalStateException.class, () -> repository.resolveAdHoc(invalid));
     }
 }

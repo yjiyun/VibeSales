@@ -1,0 +1,19 @@
+{
+  "bindings": [
+    {
+      "clientCode": "yjiyuncom",
+      "cluster": "test",
+      "provider": "bailian",
+      "defaultKnowledgeBaseCode": "guyu-default",
+      "knowledgeBases": [
+        {
+          "knowledgeBaseCode": "guyu-default",
+          "displayName": "谷雨美肤师知识库",
+          "workspaceId": "ws-qyj7di2isvc4685l",
+          "indexId": "xxcyhbmrcs",
+          "description": "谷雨账号当前启用的产品、用法、会员、售后与风险提示知识。"
+        }
+      ]
+    }
+  ]
+}

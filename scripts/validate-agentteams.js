@@ -52,9 +52,33 @@ for (const dir of fs.readdirSync(skillRoot)) {
   const description = text.match(/^description:\s*(.+)$/m)?.[1]?.trim();
   if (!name || !description) fail(file + ': frontmatter name/description required');
   for (const label of requiredLines) if (!text.includes(label)) fail(file + ': missing ' + label);
+  // Worker/Leader 容器里只有 agentteams-fs，没有本仓库的 docs/。指向 docs 的判据会让模型
+  // 去 read_file 一个不存在的路径，然后自行编一套处理方式（实测 Leader 因读不到
+  // platform_bug.md 而临场推演升 Human 流程）。Skill 必须自带完整判据。
+  const docReference = text.match(/(?:docs\/[\w./一-鿿-]+|platform_bug\.md)/);
+  if (docReference) fail(file + ': must not point Workers at repo docs (' + docReference[0] + '); Skills run in containers without docs/');
   skillNames.add(name);
 }
 for (const {file,doc} of workers) for (const skill of doc.spec.skills) if (!skillNames.has(skill)) fail(file + ': missing Skill ' + skill);
+
+// §3.9/§3.11：qwenpaw `_was_mentioned` 的唯一可用判定是「正文纯文本出现完整 MXID」。Leader 只有
+// message 工具，无法为别人构造 m.mentions，所以派活首行必须是目标 Worker 的完整 MXID 字面量。
+// 实测漏写（写成 `worker=template-match` 裸名）→ Worker 侧 group text not mentioned → 整个 run 卡死，
+// 而 Leader 自认为已派发，不会重试。两个派发技能都必须把 MXID 作为可复制字面量列出，禁止只描述规则。
+const DISPATCH_DOMAIN = ':matrix-local.agentteams.io:18080';
+const dispatchMxids = {
+  'leader-route': ['template-match','template-personalize','flow-generate','blueprint-compose','flow-import-run'],
+  'expert-dispatch': ['persona-expert','business-expert','skill-expert','tool-expert'],
+};
+for (const [skill, targets] of Object.entries(dispatchMxids)) {
+  const file = path.join(skillRoot, skill, 'SKILL.md');
+  const text = fs.readFileSync(file, 'utf8');
+  for (const target of targets) {
+    if (!text.includes('@' + target + DISPATCH_DOMAIN)) fail(file + ': dispatch first line must list the full copyable MXID for ' + target);
+  }
+  if (!text.includes('首行')) fail(file + ': must state that the full target MXID belongs on the dispatch first line');
+  if (!text.includes('group text not mentioned')) fail(file + ': must name the observable symptom of a missing dispatch MXID');
+}
 
 const mcpText = fs.readFileSync(path.join(root,'agent-core/src/mcp/mcp.service.ts'),'utf8');
 for (const server of ['chatflows-p1','chatflows-p2','chatflows-p3','chatflows-p3b','chatflows-p3c','chatflows-p4']) if (!mcpText.includes("'"+server+"'")) fail('missing MCP server ' + server);

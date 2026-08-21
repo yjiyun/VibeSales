@@ -1,4 +1,4 @@
-package com.agentteams.salesagent.web;
+package com.vibesales.salesagent.web;
 
 import com.fasterxml.jackson.databind.SerializationFeature;
 import com.fasterxml.jackson.databind.ObjectMapper;
@@ -6,17 +6,19 @@ import com.fasterxml.jackson.datatype.jsr310.JavaTimeModule;
 import com.sun.net.httpserver.HttpExchange;
 import com.sun.net.httpserver.HttpHandler;
 import com.sun.net.httpserver.HttpServer;
-import com.agentteams.salesagent.agent.ChatResponse;
-import com.agentteams.salesagent.agent.CustomerServiceOrchestratorAgent;
-import com.agentteams.salesagent.blueprint.BlueprintCatalogItem;
-import com.agentteams.salesagent.blueprint.BlueprintSelection;
-import com.agentteams.salesagent.config.AppConfig;
-import com.agentteams.salesagent.conversation.ConversationCreateResult;
-import com.agentteams.salesagent.conversation.ConversationService;
-import com.agentteams.salesagent.context.CustomerContext;
-import com.agentteams.salesagent.knowledge.BailianKnowledgeHealthService;
-import com.agentteams.salesagent.knowledge.KnowledgeHealthResult;
-import com.agentteams.salesagent.progress.ExecutionProgressListener;
+import com.vibesales.salesagent.agent.ChatResponse;
+import com.vibesales.salesagent.agent.CustomerServiceOrchestratorAgent;
+import com.vibesales.salesagent.blueprint.AgentBlueprint;
+import com.vibesales.salesagent.blueprint.BlueprintCatalogItem;
+import com.vibesales.salesagent.blueprint.BlueprintSelection;
+import com.vibesales.salesagent.blueprint.JdbcPublishedBlueprintSource;
+import com.vibesales.salesagent.config.AppConfig;
+import com.vibesales.salesagent.conversation.ConversationCreateResult;
+import com.vibesales.salesagent.conversation.ConversationService;
+import com.vibesales.salesagent.context.CustomerContext;
+import com.vibesales.salesagent.knowledge.BailianKnowledgeHealthService;
+import com.vibesales.salesagent.knowledge.KnowledgeHealthResult;
+import com.vibesales.salesagent.progress.ExecutionProgressListener;
 import io.agentscope.core.event.AgentEvent;
 import io.agentscope.core.event.AgentResultEvent;
 import io.agentscope.core.event.RequireUserConfirmEvent;
@@ -27,6 +29,9 @@ import java.io.OutputStream;
 import java.net.InetSocketAddress;
 import java.net.URI;
 import java.nio.charset.StandardCharsets;
+import java.sql.Connection;
+import java.sql.DriverManager;
+import java.sql.PreparedStatement;
 import java.time.Instant;
 import java.util.List;
 import java.security.MessageDigest;
@@ -82,10 +87,13 @@ public final class WebServer {
         server.createContext("/api/chat/runs/", new ChatRunEventsHandler());
         server.createContext("/api/chat", new ChatHandler());
         server.createContext("/api/v1/chat", new LegacyV1ChatHandler());
+        server.createContext("/api/v1/dryrun", new DryRunHandler());
+        server.createContext("/api/v1/ingest", new IngestHandler());
         server.createContext("/api/health", exchange -> writeJson(exchange, 200, "{\"status\":\"ok\"}"));
         server.createContext("/api/health/knowledge", new KnowledgeHealthHandler());
         server.createContext("/api/debug/agent-blueprint", new AgentBlueprintDebugHandler());
         server.createContext("/api/debug/blueprint-catalog", new BlueprintCatalogHandler());
+        server.createContext("/api/debug/blueprint-retire", new BlueprintRetireHandler());
         server.createContext("/api/debug/runtime-binding-summary", new RuntimeBindingSummaryHandler());
         server.createContext("/api/debug/runtime-agent-templates", new RuntimeAgentTemplateHandler());
         server.setExecutor(executor);
@@ -199,6 +207,96 @@ public final class WebServer {
             } catch (Exception exception) {
                 writeLegacyV1ChatError(exchange, exception);
             }
+        }
+    }
+
+    /**
+     * P4 dry-run 冒烟：body 是完整 Blueprint 原文（可能还没落库），query 带
+     * {@code clientCode/userId/runtimeAgentId} 三个作用域字段用于构造 {@link CustomerContext}。
+     * 鉴权复用 {@code /api/v1/chat} 同一枚 {@code RUNTIME_AUTH_TOKEN}（{@link AppConfig#compatV1ChatAuthToken()}），
+     * 因为它们同属"持有 Runtime 网关令牌就能触发一次真实对话"这一权限级别，不是 admin 操作。
+     */
+    private final class DryRunHandler implements HttpHandler {
+        @Override
+        public void handle(HttpExchange exchange) throws IOException {
+            if (!"POST".equalsIgnoreCase(exchange.getRequestMethod())) {
+                writeJson(
+                        exchange, 405, objectMapper.writeValueAsString(java.util.Map.of("error", "POST required")));
+                return;
+            }
+            if (!"/api/v1/dryrun".equals(exchange.getRequestURI().getPath())) {
+                writeText(exchange, 404, "Not Found", "text/plain; charset=utf-8");
+                return;
+            }
+            try {
+                requireRuntimeBearerAuth(exchange);
+                URI uri = exchange.getRequestURI();
+                String clientCode = requireQueryParam(uri, "clientCode");
+                String userId = requireQueryParam(uri, "userId");
+                String runtimeAgentId = requireQueryParam(uri, "runtimeAgentId");
+                byte[] requestBytes = exchange.getRequestBody().readAllBytes();
+                AgentBlueprint blueprint = objectMapper.readValue(requestBytes, AgentBlueprint.class);
+                CustomerContext customerContext =
+                        new CustomerContext(
+                                clientCode,
+                                blueprint.clusterOrEmpty(),
+                                "",
+                                runtimeAgentId,
+                                String.valueOf(blueprint.version()),
+                                "",
+                                "",
+                                userId,
+                                "",
+                                userId,
+                                userId,
+                                "",
+                                "",
+                                "",
+                                "");
+                ChatResponse response =
+                        agent.handleWithBlueprint(
+                                blueprint,
+                                customerContext,
+                                "ping",
+                                ExecutionProgressListener.noop(),
+                                null);
+                writeJson(
+                        exchange,
+                        200,
+                        objectMapper.writeValueAsString(
+                                java.util.Map.of("ok", true, "response", safe(response.reply()))));
+            } catch (Exception exception) {
+                writeDryRunError(exchange, exception);
+            }
+        }
+    }
+
+    /**
+     * {@code /api/v1/ingest} 显式声明"本部署没有 ingest"，恒定返回 404。
+     *
+     * <p>Blueprint 落库不属于 agent-runtime：{@code agent_blueprint} 表由 agent-core 的
+     * {@code ArtifactStoreService} 按 {@code worker_p3c}(insert DRAFT) →
+     * {@code worker_p4}(DRAFT→STAGED) → {@code blueprint_admin}(STAGED→PUBLISHED) 的角色状态机写入，
+     * 由 PG 触发器 {@code enforce_blueprint_role_write()} 强制；agent-runtime 持只读连接，
+     * 既没有也不该有插入或流转该表状态的权限。P4 调用 ingest 时，agent-core 已经把这份 Blueprint
+     * 写成 STAGED 了，agent-runtime 靠 {@code JdbcPublishedBlueprintSource} 读同一张表即可。
+     *
+     * <p>之所以仍要注册这条路由：不注册时请求会落到根 {@code "/"} 的 {@link IndexHandler}，
+     * 它只收 GET，于是 POST 得到 405。而 P4 客户端（{@code agent-runtime.client.ts#ingest}）
+     * 只对 404 静默跳过，405 会被当成真失败抛出去，把整条 run 拖进 RUN_BLOCKED。
+     */
+    private final class IngestHandler implements HttpHandler {
+        @Override
+        public void handle(HttpExchange exchange) throws IOException {
+            writeJson(
+                    exchange,
+                    404,
+                    objectMapper.writeValueAsString(
+                            java.util.Map.of(
+                                    "error", "ingest_not_deployed",
+                                    "message",
+                                            "agent-runtime does not ingest blueprints; "
+                                                    + "agent-core writes agent_blueprint directly")));
         }
     }
 
@@ -460,6 +558,8 @@ public final class WebServer {
                         resolved.rules().recoveryDetectionRule().isPresent()
                                 ? "blueprint"
                                 : "java-default");
+                payload.put("intentKeywordSource", resolved.rules().intentKeywordSource());
+                payload.put("profileThresholdSource", resolved.rules().profileThresholdSource());
                 payload.put("consumedFields", report.consumedFields());
                 payload.put("warnings", report.warnings());
                 payload.put("ignoredFields", report.ignoredFields());
@@ -512,6 +612,94 @@ public final class WebServer {
                         objectMapper.writeValueAsString(
                                 java.util.Map.of(
                                         "status", "blueprint_catalog_failed",
+                                        "message", String.valueOf(exception.getMessage()))));
+            }
+        }
+    }
+
+    private final class BlueprintRetireHandler implements HttpHandler {
+        @Override
+        public void handle(HttpExchange exchange) throws IOException {
+            if (!"POST".equalsIgnoreCase(exchange.getRequestMethod())) {
+                writeText(exchange, 405, "Method Not Allowed", "text/plain; charset=utf-8");
+                return;
+            }
+            try {
+                byte[] requestBytes = exchange.getRequestBody().readAllBytes();
+                @SuppressWarnings("unchecked")
+                java.util.Map<String, Object> body =
+                        requestBytes.length == 0
+                                ? java.util.Map.of()
+                                : objectMapper.readValue(requestBytes, java.util.Map.class);
+                String sourceType = safe(stringValue(body.get("sourceType")));
+                String blueprintId = safe(stringValue(body.get("blueprintId")));
+                String clientCode = safe(stringValue(body.get("clientCode")));
+                String runtimeAgentId = safe(stringValue(body.get("runtimeAgentId")));
+                String version = safe(stringValue(body.get("version")));
+                if (!JdbcPublishedBlueprintSource.SOURCE_TYPE.equals(sourceType)) {
+                    writeJson(
+                            exchange,
+                            400,
+                            objectMapper.writeValueAsString(
+                                    java.util.Map.of(
+                                            "status", "blueprint_retire_invalid_source",
+                                            "message", "当前只支持删除 jdbc_published 来源的 Blueprint 资产")));
+                    return;
+                }
+                if (!config.blueprintJdbcConfigured()) {
+                    writeJson(
+                            exchange,
+                            500,
+                            objectMapper.writeValueAsString(
+                                    java.util.Map.of(
+                                            "status", "blueprint_retire_jdbc_unconfigured",
+                                            "message", "未配置 Blueprint JDBC 连接，无法执行数据库软删除")));
+                    return;
+                }
+                if (blueprintId.isBlank() || clientCode.isBlank() || runtimeAgentId.isBlank() || version.isBlank()) {
+                    writeJson(
+                            exchange,
+                            400,
+                            objectMapper.writeValueAsString(
+                                    java.util.Map.of(
+                                            "status", "blueprint_retire_bad_request",
+                                            "message", "blueprintId、clientCode、runtimeAgentId、version 不能为空")));
+                    return;
+                }
+                int affected = retireJdbcPublishedBlueprint(blueprintId, clientCode, runtimeAgentId, version);
+                if (affected <= 0) {
+                    writeJson(
+                            exchange,
+                            404,
+                            objectMapper.writeValueAsString(
+                                    java.util.Map.of(
+                                            "status", "blueprint_retire_not_found",
+                                            "blueprintId", blueprintId,
+                                            "clientCode", clientCode,
+                                            "runtimeAgentId", runtimeAgentId,
+                                            "version", version,
+                                            "message", "未找到可软删除的已发布 Blueprint 记录")));
+                    return;
+                }
+                writeJson(
+                        exchange,
+                        200,
+                        objectMapper.writeValueAsString(
+                                java.util.Map.of(
+                                        "status", "ok",
+                                        "action", "retired",
+                                        "affectedRows", affected,
+                                        "blueprintId", blueprintId,
+                                        "clientCode", clientCode,
+                                        "runtimeAgentId", runtimeAgentId,
+                                        "version", version)));
+            } catch (Exception exception) {
+                writeJson(
+                        exchange,
+                        500,
+                        objectMapper.writeValueAsString(
+                                java.util.Map.of(
+                                        "status", "blueprint_retire_failed",
                                         "message", String.valueOf(exception.getMessage()))));
             }
         }
@@ -658,6 +846,7 @@ public final class WebServer {
         String runtimeAgentId = requireQueryParam(requestUri, "runtimeAgentId");
         String cluster = extractQueryParam(requestUri, "cluster");
         String version = extractQueryParam(requestUri, "version");
+        String sceneCode = extractQueryParam(requestUri, "sceneCode");
 
         ChatInputData inputData = new ChatInputData();
         inputData.userId = userId;
@@ -671,7 +860,13 @@ public final class WebServer {
         request.message = message == null ? "" : message;
         request.clientCode = clientCode;
         request.cluster = cluster;
-        request.sceneCode = runtimeAgentId;
+        // sceneCode 与 runtimeAgentId 是两个不同维度：runtimeAgentId 形如 <场景>-<租户>（P4
+        // bindProject 生成），sceneCode 要对上 Blueprint 的 meta.scenarios 元素（如 beauty_wecom_cs）。
+        // 这里曾经写 sceneCode = runtimeAgentId，等于凭空造出一个永远匹配不上 meta.scenarios 的场景
+        // 过滤条件，JdbcPublishedBlueprintSource.sceneRank 把候选全判掉，蓝图明明已发布也会静默
+        // 落回 fallback 提示词。试聊入口不传 sceneCode，就该留空表示"不限定场景"，交给
+        // runtimeAgentId 单独定位。
+        request.sceneCode = sceneCode;
         request.runtimeAgentId = runtimeAgentId;
         request.version = version;
         request.conversationId = sessionId;
@@ -773,6 +968,33 @@ public final class WebServer {
         }
     }
 
+    private int retireJdbcPublishedBlueprint(
+            String blueprintId, String clientCode, String runtimeAgentId, String version) {
+        String sql =
+                "update agent_blueprint "
+                        + "set status = 'RETIRED', updated_at = CURRENT_TIMESTAMP "
+                        + "where blueprint_id = ? and client_code = ? and runtime_agent_id = ? "
+                        + "and version = ? and status = 'PUBLISHED'";
+        try (Connection connection =
+                        DriverManager.getConnection(
+                                config.blueprintJdbcUrl(),
+                                config.blueprintJdbcUsername(),
+                                config.blueprintJdbcPassword());
+                PreparedStatement statement = connection.prepareStatement(sql)) {
+            connection.setAutoCommit(false);
+            statement.setString(1, blueprintId);
+            statement.setString(2, clientCode);
+            statement.setString(3, runtimeAgentId);
+            statement.setInt(4, Integer.parseInt(version));
+            int affected = statement.executeUpdate();
+            connection.commit();
+            return affected;
+        } catch (Exception exception) {
+            throw new IllegalStateException(
+                    "retire jdbc blueprint failed: " + exception.getMessage(), exception);
+        }
+    }
+
     private void writeSseEvent(OutputStream outputStream, ChatRunEvent event) throws IOException {
         outputStream.write(("id: " + event.seq() + "\n").getBytes(StandardCharsets.UTF_8));
         outputStream.write("event: progress\n".getBytes(StandardCharsets.UTF_8));
@@ -800,6 +1022,39 @@ public final class WebServer {
                 expected.getBytes(StandardCharsets.UTF_8), actual.getBytes(StandardCharsets.UTF_8))) {
             throw new SecurityException("unauthorized");
         }
+    }
+
+    /** {@code /api/v1/dryrun} 鉴权：与 {@code /api/v1/chat} 同一枚 {@code RUNTIME_AUTH_TOKEN}，始终强制校验。 */
+    private void requireRuntimeBearerAuth(HttpExchange exchange) {
+        String expected = config.compatV1ChatAuthToken();
+        if (expected == null || expected.isBlank()) {
+            throw new IllegalStateException("RUNTIME_AUTH_TOKEN missing; dry-run requires it");
+        }
+        String actual = bearerToken(exchange);
+        if (!MessageDigest.isEqual(
+                expected.getBytes(StandardCharsets.UTF_8), actual.getBytes(StandardCharsets.UTF_8))) {
+            throw new SecurityException("unauthorized");
+        }
+    }
+
+    private void writeDryRunError(HttpExchange exchange, Exception exception) throws IOException {
+        int statusCode;
+        String error;
+        if (exception instanceof SecurityException) {
+            statusCode = 401;
+            error = "unauthorized";
+        } else if (exception instanceof IllegalArgumentException) {
+            statusCode = 400;
+            error = "bad_request";
+        } else {
+            statusCode = 500;
+            error = "dryrun_failed";
+        }
+        writeJson(
+                exchange,
+                statusCode,
+                objectMapper.writeValueAsString(
+                        java.util.Map.of("error", error, "message", safeMessage(exception))));
     }
 
     private void forwardLegacyV1ChatEvent(
@@ -894,6 +1149,10 @@ public final class WebServer {
 
     private static String safe(String value) {
         return value == null ? "" : value;
+    }
+
+    private static String stringValue(Object value) {
+        return value == null ? "" : String.valueOf(value);
     }
 
     private static String previewText(String value, int maxLength) {

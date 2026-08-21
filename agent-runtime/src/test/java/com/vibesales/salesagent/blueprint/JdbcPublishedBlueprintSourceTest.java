@@ -5,8 +5,6 @@ import static org.junit.jupiter.api.Assertions.assertTrue;
 
 import com.agentteams.salesagent.config.AppConfig;
 import java.nio.charset.StandardCharsets;
-import java.nio.file.Files;
-import java.nio.file.Path;
 import java.util.List;
 import java.util.Map;
 import org.junit.jupiter.api.Test;
@@ -113,6 +111,30 @@ class JdbcPublishedBlueprintSourceTest {
                                         AgentBlueprintRepository.MATCH_FALLBACK)));
 
         BlueprintSource.BlueprintHandle handle =
+                source.resolve(
+                                "yjiyuncom",
+                                "test",
+                                "BEAUTY_SKINCARE",
+                                DEFAULT_RUNTIME_AGENT_ID,
+                                "",
+                                "admin_matrix-local_agentteams_io_18080")
+                        .orElseThrow();
+
+        assertEquals("yjiyuncom_default_v1", handle.blueprint().blueprintId());
+        assertEquals(AgentBlueprintRepository.MATCH_FALLBACK, handle.matchLevel());
+    }
+
+    @Test
+    void shouldSkipTenantBindingLookupWhenUserIdMissing() throws Exception {
+        List<JdbcPublishedBlueprintSource.StoredBlueprintRow> rows =
+                rows("blueprints/yjiyuncom.test.json", "blueprints/yjiyuncom.default.json");
+        JdbcPublishedBlueprintSource source =
+                new JdbcPublishedBlueprintSource(
+                        config(),
+                        new AgentBlueprintLoader(),
+                        rowProviderFailingOnTenantBindingLookup(rows));
+
+        BlueprintSource.BlueprintHandle handle =
                 source.resolve("yjiyuncom", "test", "BEAUTY_SKINCARE", DEFAULT_RUNTIME_AGENT_ID, "")
                         .orElseThrow();
 
@@ -148,10 +170,7 @@ class JdbcPublishedBlueprintSourceTest {
         java.util.ArrayList<JdbcPublishedBlueprintSource.StoredBlueprintRow> rows =
                 new java.util.ArrayList<>();
         for (String resource : resources) {
-            Path path =
-                    Path.of("/Users/haoli/webproject/VibeSales/sales-customer-agent/src/main/resources")
-                            .resolve(resource.replace("blueprints/", "blueprints/"));
-            String json = Files.readString(path, StandardCharsets.UTF_8);
+            String json = readBlueprintResource(resource);
             AgentBlueprint blueprint = loader.parse(json, resource);
             rows.add(
                     new JdbcPublishedBlueprintSource.StoredBlueprintRow(
@@ -162,14 +181,30 @@ class JdbcPublishedBlueprintSourceTest {
 
     private static JdbcPublishedBlueprintSource.StoredBlueprintRow rowWithVersion(
             String resource, String blueprintId, int version) throws Exception {
-        Path path =
-                Path.of("/Users/haoli/webproject/VibeSales/sales-customer-agent/src/main/resources")
-                        .resolve(resource.replace("blueprints/", "blueprints/"));
         String json =
-                Files.readString(path, StandardCharsets.UTF_8)
+                readBlueprintResource(resource)
                         .replace("\"blueprintId\": \"yjiyuncom_test_v1\"", "\"blueprintId\": \"" + blueprintId + "\"")
                         .replace("\"version\": 1", "\"version\": " + version);
         return new JdbcPublishedBlueprintSource.StoredBlueprintRow(blueprintId, version, json);
+    }
+
+    /**
+     * 从 classpath 读蓝图原文。
+     *
+     * <p>刻意不走文件系统绝对路径：这些 JSON 就在 {@code src/main/resources/blueprints/} 下、
+     * 已随 classpath 打包，{@code AgentBlueprintLoader} 也是按 classpath 读的。本测试需要
+     * <b>原始 JSON 字符串</b>（要塞进 {@code StoredBlueprintRow.payloadJson} 模拟 PG 的
+     * {@code payload::text}，还要做字符串替换造多版本），所以自己读一次流而不是复用
+     * {@code loadFromClasspath}（那个只返回解析后的对象）。
+     */
+    private static String readBlueprintResource(String resource) throws Exception {
+        try (java.io.InputStream inputStream =
+                JdbcPublishedBlueprintSourceTest.class.getClassLoader().getResourceAsStream(resource)) {
+            if (inputStream == null) {
+                throw new IllegalStateException("blueprint resource not on classpath: " + resource);
+            }
+            return new String(inputStream.readAllBytes(), StandardCharsets.UTF_8);
+        }
     }
 
     private static JdbcPublishedBlueprintSource.RowProvider rowProvider(
@@ -218,6 +253,35 @@ class JdbcPublishedBlueprintSourceTest {
         };
     }
 
+    /** {@code loadTenantBoundPublished} 一旦被调用就失败，用来断言"没传 userId 时该查找被跳过"。 */
+    private static JdbcPublishedBlueprintSource.RowProvider rowProviderFailingOnTenantBindingLookup(
+            List<JdbcPublishedBlueprintSource.StoredBlueprintRow> rows) {
+        return new JdbcPublishedBlueprintSource.RowProvider() {
+            @Override
+            public List<JdbcPublishedBlueprintSource.StoredBlueprintRow> loadPublishedByClientCode(
+                    String clientCode) {
+                return rowProvider(rows).loadPublishedByClientCode(clientCode);
+            }
+
+            @Override
+            public List<JdbcPublishedBlueprintSource.StoredBlueprintRow> loadAllPublished() {
+                return rows;
+            }
+
+            @Override
+            public java.util.Optional<JdbcPublishedBlueprintSource.BoundBlueprintRow>
+                    loadTenantBoundPublished(
+                            String clientCode,
+                            String cluster,
+                            String runtimeAgentId,
+                            String tenantUserId,
+                            Integer requestedVersion) {
+                throw new AssertionError(
+                        "tenant binding lookup must not run when userId is missing");
+            }
+        };
+    }
+
     private static AppConfig config() {
         return new AppConfig(
                 "model",
@@ -235,6 +299,10 @@ class JdbcPublishedBlueprintSourceTest {
                 "",
                 "",
                 "agent_conversations",
+                // chatRunJdbcUrl / Username / Password：留空表示不启用运行留痕落库
+                "",
+                "",
+                "",
                 "agent_chat_runs",
                 "agent_chat_run_events",
                 "http://localhost:3002",
@@ -259,6 +327,7 @@ class JdbcPublishedBlueprintSourceTest {
                 ".agentscope/workspace",
                 "sales-customer-agent",
                 false,
+                "",
                 "",
                 false,
                 "",

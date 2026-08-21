@@ -33,9 +33,9 @@ const providerType = required('HIGRESS_MODEL_PROVIDER');
 const dashscopeKey = required('HIGRESS_DASHSCOPE_API_KEY');
 const openaiApiUrl = String(env.HIGRESS_OPENAI_API_URL || '').trim();
 const modelPatterns = String(env.HIGRESS_QWEN_MODELS || '*').trim();
-const probeModel = String(env.QWEN_MODEL || env.RUNTIME_MODEL || 'deepseek-v4-flash-0731')
+const probeModel = String(env.QWEN_MODEL || env.RUNTIME_MODEL || 'deepseek-v4-flash')
   .replace(/^dashscope:/, '')
-  .trim() || 'deepseek-v4-flash-0731';
+  .trim() || 'deepseek-v4-flash';
 const providerName = openaiApiUrl
   ? (providerType === 'qwen' ? 'openai' : providerType)
   : (providerType === 'qwen' ? 'qwen' : providerType);

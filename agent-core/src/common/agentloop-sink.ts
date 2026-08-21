@@ -1,10 +1,3 @@
-/**
- * 可选集成：AgentLoop 观测出口（OTel GenAI 语义）。
- *
- * AGENTLOOP_EXPORTER=off（默认）时本模块完全不参与主链路；置为 on 才会外呼，
- * 并需要云网关的 ROA 签名凭证（AGENTLOOP_ACCESS_KEY / ACCESS_SECRET）。
- * 不使用该云服务的部署保持关闭即可，或替换为自建 OTel Collector。
- */
 import { createHash, createHmac, randomUUID } from 'crypto';
 import { TraceRecord, TraceSink } from './trace-sink';
 import { spanDisplayName } from './span-aliases';
@@ -20,7 +13,8 @@ export type AgentLoopExporterMode = 'off' | 'stderr' | 'on';
 
 /**
  * 正文采集开关（方案 §5.3，与 Java 两端 OTEL_INSTRUMENTATION_GENAI_CAPTURE_MESSAGE_CONTENT 同名同义）：
- * false / none 时不写 gen_ai.input/output.messages，spec/提示词含 PII 时可整体关闭；关闭后调用链与 token 仍可用。默认采集。
+ * false / none 时不写任何正文属性（LLM/AGENT 的 gen_ai.input/output.messages、工具的
+ * gen_ai.tool.call.arguments/result），spec/提示词含 PII 时可整体关闭；关闭后调用链与 token 仍可用。默认采集。
  */
 function captureContent(): boolean {
   const v = String(process.env.OTEL_INSTRUMENTATION_GENAI_CAPTURE_MESSAGE_CONTENT ?? 'span_and_event').trim().toLowerCase();
@@ -56,7 +50,10 @@ function phaseDataSummary(scope: string, data: Record<string, unknown>): string 
   try { return JSON.stringify(biz); } catch { return undefined; }
 }
 
-/** TraceRecord → OTel GenAI / agentteams 属性；业务代码仍只调用 trace.step。 */
+/** 运行级 span 的 scope（见 {@link McpService.finishRun}）：一次搭建 run 收尾时补的 AGENT span。 */
+export const RUN_SPAN_SCOPE = 'AgentRun';
+
+/** TraceRecord → OTel GenAI / vibesales 属性；业务代码仍只调用 trace.step。 */
 export function toAgentLoopEnvelope(rec: TraceRecord): AgentLoopEnvelope {
   const data = rec.data && typeof rec.data === 'object' && !Array.isArray(rec.data)
     ? rec.data as Record<string, unknown> : {};
@@ -64,22 +61,40 @@ export function toAgentLoopEnvelope(rec: TraceRecord): AgentLoopEnvelope {
     const value = data[key];
     return ['string','number','boolean'].includes(typeof value) ? value as string|number|boolean : undefined;
   };
+  const isRun = rec.scope === RUN_SPAN_SCOPE;
+  const isLlm = rec.scope.includes('Qwen');
   const attributes: Record<string, string | number | boolean> = {
-    'gen_ai.operation.name': rec.scope.includes('Qwen') ? 'chat' : 'execute_tool',
-    'agentteams.request_id': rec.requestId,
-    'agentteams.flow': rec.flow,
-    'agentteams.scope': rec.scope,
-    'agentteams.event': rec.event,
-    'agentteams.seq': rec.seq,
-    'agentteams.trace.link': typeof data.traceparent === 'string' ? 'traceparent' : 'run_id_fallback',
+    'gen_ai.operation.name': isRun ? 'invoke_agent' : isLlm ? 'chat' : 'execute_tool',
+    // 面板按 gen_ai.span.kind 决定"从哪个属性读输入/输出"（loongsuite otel-util-genai 的
+    // GenAiSpanKindValues）：AGENT/LLM/ENTRY 读 gen_ai.input/output.messages，TOOL 读
+    // gen_ai.tool.call.arguments/result。以前不写这个属性，面板按 operation.name 猜成 TOOL，
+    // 于是我们写在 messages 里的正文谁也不读——span 明细里看得见值，输入/输出栏却是空的。
+    'gen_ai.span.kind': isRun ? 'AGENT' : isLlm ? 'LLM' : 'TOOL',
+    'vibesales.request_id': rec.requestId,
+    'vibesales.flow': rec.flow,
+    'vibesales.scope': rec.scope,
+    'vibesales.event': rec.event,
+    'vibesales.seq': rec.seq,
+    'vibesales.trace.link': typeof data.traceparent === 'string' ? 'traceparent' : 'run_id_fallback',
   };
-  if (rec.scope.includes('Qwen')) {
+  if (isRun) {
+    // 运行级 AGENT span：面板顶部的"输入/输出"摘要与 Agents 数只认 AGENT/ENTRY 类 span，
+    // 叶子 execute_tool 的正文再全也不会被汇总。这里放整条 run 的诉求与终态产物。
+    const agentName = scalar('agent_name');
+    if (agentName !== undefined) attributes['gen_ai.agent.name'] = agentName;
+    if (captureContent()) {
+      const input = asText(data.run_input);
+      if (input !== undefined) attributes['gen_ai.input.messages'] = messagesJson('user', input);
+      const output = asText(data.run_output);
+      if (output !== undefined) attributes['gen_ai.output.messages'] = messagesJson('assistant', output, 'stop');
+    }
+  } else if (isLlm) {
     attributes['gen_ai.system'] = 'dashscope';
     // A22：只有可控层 1/3/4 的用量能归到 run；pre-run 向导用量不得混入 run 总量，
     // 且 stock Worker 用量在平台不提供时必须显式声明不可用。
     const runId = scalar('run_id');
-    attributes['agentteams.usage.scope'] = runId ? 'run' : 'pre_run';
-    if (runId) attributes['agentteams.worker_usage_available'] = false;
+    attributes['vibesales.usage.scope'] = runId ? 'run' : 'pre_run';
+    if (runId) attributes['vibesales.worker_usage_available'] = false;
     // 面板 Input/Output 摘要（§5.3）：正文分布在两条记录上——chatJson.prompt 带 system/user、
     // chatJson.done 带 parsed/content。各自落到对应 span 的 input/output.messages；面板读到哪条即显示哪条。
     if (captureContent()) {
@@ -89,29 +104,42 @@ export function toAgentLoopEnvelope(rec: TraceRecord): AgentLoopEnvelope {
       if (output !== undefined) attributes['gen_ai.output.messages'] = messagesJson('assistant', output, 'stop');
     }
   } else if (captureContent()) {
-    // 工具类 span（execute_tool，如 MCP tool.call/tool.result）的面板 Input/Output：
+    // 工具类 span（TOOL，如 MCP tool.call/tool.result）的面板"输入/输出"读的是
+    // gen_ai.tool.call.arguments / gen_ai.tool.call.result（loongsuite otel-util-genai
+    // 的 getToolCallDataAttributes），**不是** input/output.messages —— 后者只在 LLM/AGENT/ENTRY
+    // 那条路径上写。所以这两个键才是工具节点正文的正主；messages 一并保留，兼容旧面板视图与
+    // 已存在的自测断言，两处内容一致。
     // controller 把工具入参放 tool_input、返回值放 tool_output（已剔除 _ctx 与 approval.proof）。
-    // role 用 tool，让面板与 LLM chat 区分开；只有对应字段存在时才写，避免空 []。
     const toolInput = asText(data.tool_input);
-    if (toolInput !== undefined) attributes['gen_ai.input.messages'] = messagesJson('tool', toolInput);
+    if (toolInput !== undefined) {
+      attributes['gen_ai.tool.call.arguments'] = clamp(toolInput);
+      attributes['gen_ai.input.messages'] = messagesJson('tool', toolInput);
+    }
     // 输出来源三级：① 工具返回值 tool_output（MCP 入口层）② step_output（mcp.service.mark 打包的
     // 业务产出）③ 阶段 span（scope=P1..P4）的业务 data 兜底摘要——覆盖直接 trace.step 的阶段节点
     // （如 P1.Wizard.compute），无需逐处埋点。底层管线（Match/Decide/…）与 Flow 路标不摘要，避免噪声。
     const output = asText(data.tool_output) ?? asText(data.step_output) ?? phaseDataSummary(rec.scope, data);
-    if (output !== undefined) attributes['gen_ai.output.messages'] = messagesJson('tool', output, 'stop');
+    if (output !== undefined) {
+      attributes['gen_ai.tool.call.result'] = clamp(output);
+      attributes['gen_ai.output.messages'] = messagesJson('tool', output, 'stop');
+    }
   }
   for (const [from, to] of [
-    ['run_id','agentteams.run_id'], ['session_id','agentteams.session_id'], ['client_code','agentteams.client_code'],
-    ['phase','agentteams.phase'], ['gate','agentteams.gate'], ['agent','agentteams.agent'],
-    ['server','agentteams.mcp.server'], ['tool','agentteams.mcp.tool'],
-    ['model','gen_ai.request.model'], ['purpose','agentteams.llm.purpose'], ['prompt_tokens','gen_ai.usage.input_tokens'],
+    ['run_id','vibesales.run_id'], ['session_id','vibesales.session_id'], ['client_code','vibesales.client_code'],
+    ['phase','vibesales.phase'], ['gate','vibesales.gate'], ['agent','vibesales.agent'],
+    ['server','vibesales.mcp.server'], ['tool','vibesales.mcp.tool'],
+    ['model','gen_ai.request.model'], ['purpose','vibesales.llm.purpose'], ['prompt_tokens','gen_ai.usage.input_tokens'],
     ['completion_tokens','gen_ai.usage.output_tokens'],
-    ['approval_id','agentteams.approval.id'], ['approval_state','agentteams.approval.state'],
+    ['approval_id','vibesales.approval.id'], ['approval_state','vibesales.approval.state'],
   ] as const) { const value = scalar(from); if (value !== undefined) attributes[to] = value; }
+  // TOOL span 的标准工具名（面板工具调用列表按它归类）；vibesales.mcp.tool 保留给我们自己的看板。
+  if (!isRun && !isLlm && attributes['vibesales.mcp.tool'] !== undefined) {
+    attributes['gen_ai.tool.name'] = attributes['vibesales.mcp.tool'];
+  }
   return {
     traceparent: typeof data.traceparent === 'string' ? data.traceparent : undefined,
-    // 中文显示名（两协议一致）；tool/phase 取已映射的 agentteams.* 属性。
-    name: spanDisplayName(rec.scope, rec.event, attributes['agentteams.mcp.tool'], attributes['agentteams.phase']),
+    // 中文显示名（两协议一致）；tool/phase 取已映射的 vibesales.* 属性。
+    name: spanDisplayName(rec.scope, rec.event, attributes['vibesales.mcp.tool'], attributes['vibesales.phase']),
     timestamp: new Date(rec.ts).toISOString(),
     attributes,
   };

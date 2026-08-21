@@ -213,5 +213,7 @@ fi
 echo "[VERIFY] P3C wizard signal inference"
 cd "$root_dir/agent-core"
 ARTIFACT_STORE=file DEMO_TRACE=0 npm run test:p3c-signals
+echo "[VERIFY] P3C Blueprint rules demand matching"
+ARTIFACT_STORE=file DEMO_TRACE=0 npm run test:p3c-rules
 
 echo "[PASS] verify-all: P1-P4, Human approval, AgentTeams resources, MCP, Java manager/runtime, Node→Java Blueprint"

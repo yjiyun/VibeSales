@@ -35,7 +35,9 @@ public final class AgentBlueprintValidator {
                     "runtimeAgentId",
                     "meta.scenarios",
                     "prompt.agentsMd",
+                    "prompt.agentsMdRef",
                     "prompt.soulMd",
+                    "prompt.soulMdRef",
                     "skills[].name",
                     "skills[].source",
                     "skills[].ref",
@@ -64,7 +66,7 @@ public final class AgentBlueprintValidator {
     private static final List<String> IGNORED_FIELDS =
             List.of(
                     "prompt.knowledgeMd（本工程走百炼知识库检索，不走文件）",
-                    "tools.mcpServers（本工程是 Java 直连 runtime API，未走 MCP）",
+                    "tools.mcpServers（MCP 服务器由 workspace/tools.json 配置，Blueprint 里这项仅供参考）",
                     "runtime.model（首轮不允许 Blueprint 覆盖模型，避免验证失焦）",
                     "runtime.maxContextTokens（未消费）",
                     "runtime.compaction（未消费）",
@@ -81,7 +83,7 @@ public final class AgentBlueprintValidator {
         }
 
         validateIdentity(blueprint, expectedClientCode, expectedCluster, errors, warnings);
-        validatePrompt(blueprint, errors);
+        validatePrompt(blueprint, errors, warnings);
         validateSkills(blueprint, errors, warnings);
         validateRules(blueprint, errors, warnings);
         validateTools(blueprint, errors, warnings);
@@ -141,11 +143,24 @@ public final class AgentBlueprintValidator {
         }
     }
 
-    private void validatePrompt(AgentBlueprint blueprint, List<String> errors) {
-        if (isBlank(blueprint.promptOrEmpty().agentsMd())) {
+    private void validatePrompt(
+            AgentBlueprint blueprint, List<String> errors, List<String> warnings) {
+        AgentBlueprint.Prompt prompt = blueprint.promptOrEmpty();
+        boolean hasAgentsInline = !isBlank(prompt.agentsMd());
+        boolean hasAgentsRef = !isBlank(prompt.agentsMdRef());
+        boolean hasSoulInline = !isBlank(prompt.soulMd());
+        boolean hasSoulRef = !isBlank(prompt.soulMdRef());
+        if (!hasAgentsInline && !hasAgentsRef) {
             errors.add(
-                    "prompt.agentsMd is required: it replaces the hardcoded system prompt, "
+                    "prompt.agentsMd or prompt.agentsMdRef is required: it replaces the hardcoded system prompt, "
                             + "without it the tenant assembly has no effect");
+        }
+        if (hasAgentsInline && hasAgentsRef) {
+            warnings.add(
+                    "prompt.agentsMd and prompt.agentsMdRef are both set; inline agentsMd wins");
+        }
+        if (hasSoulInline && hasSoulRef) {
+            warnings.add("prompt.soulMd and prompt.soulMdRef are both set; inline soulMd wins");
         }
     }
 
@@ -273,7 +288,11 @@ public final class AgentBlueprintValidator {
                         errors.add(
                                 "tools.allow declares '"
                                         + name
-                                        + "' which this project does not implement at all");
+                                        + "' which this project does not implement at all"
+                                        + "; supported tools are "
+                                        + ToolCapabilityCatalog.supported()
+                                        + " (MCP-provided tools come from workspace/tools.json"
+                                        + " mcpServers[].enableTools)");
                 case "implemented_not_wired" ->
                         warnings.add(
                                 "tools.allow declares '"
@@ -287,7 +306,7 @@ public final class AgentBlueprintValidator {
                                         + "' which SalesAgentFactory currently disables"
                                         + " (disableFilesystemTools/disableShellTool)");
                 default -> {
-                    // supported, nothing to report
+                    // supported（含 mcp_provided），nothing to report
                 }
             }
         }
@@ -303,7 +322,8 @@ public final class AgentBlueprintValidator {
             warnings.add(
                     "tools.mcpServers declared ("
                             + tools.mcpServers().size()
-                            + ") but not consumed: this project calls the runtime API directly");
+                            + ") but not consumed from the Blueprint: MCP servers are configured"
+                            + " by workspace/tools.json, so the Blueprint entry is informational");
         }
     }
 

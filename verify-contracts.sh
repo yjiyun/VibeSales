@@ -58,9 +58,9 @@ mvn -o -q test-compile
 for test in RuntimeSelfTest InspectSelfTest RuntimeGatewaySelfTest RuntimeGatewayModelSelfTest RuntimeAgentLoopSelfTest RuntimeDistributedSelfTest; do
   mvn -o -q exec:java -Dexec.mainClass="com.yjiyun.chatflows.runtime.$test" -Dexec.classpathScope=test
 done
-mvn -o -q exec:java -Dexec.mainClass=com.yjiyun.chatflows.runtime.observability.AgentLoopExporterSelfTest -Dexec.classpathScope=test -Dexec.args="$runtime_agentloop_file"
-mvn -o -q exec:java -Dexec.mainClass=com.yjiyun.chatflows.runtime.observability.RuntimeTelemetryMessagesSelfTest -Dexec.classpathScope=test
-mvn -o -q exec:java -Dexec.mainClass=com.yjiyun.chatflows.runtime.observability.SpanAliasesSelfTest -Dexec.classpathScope=test
+mvn -o -q exec:java -Dexec.mainClass=com.vibesales.salesagent.observability.RuntimeTelemetryInstallSelfTest -Dexec.classpathScope=test
+mvn -o -q exec:java -Dexec.mainClass=com.vibesales.salesagent.observability.RuntimeTelemetryMessagesSelfTest -Dexec.classpathScope=test
+mvn -o -q exec:java -Dexec.mainClass=com.vibesales.salesagent.observability.SpanAliasesSelfTest -Dexec.classpathScope=test
 mvn -o -q exec:java -Dexec.mainClass=com.yjiyun.chatflows.runtime.CrossLanguageSelfTest -Dexec.classpathScope=test -Dexec.args="$contract_temp/smokes/beauty.json"
 mvn -o -q exec:java -Dexec.mainClass=com.yjiyun.chatflows.runtime.IndustrySmokeSelfTest -Dexec.classpathScope=test -Dexec.args="$contract_temp/smokes"
 cd "$root_dir/agent-core"

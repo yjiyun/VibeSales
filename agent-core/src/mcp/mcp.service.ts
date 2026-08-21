@@ -13,6 +13,7 @@ import { PreviewService } from '../preview/preview.service';
 import { TenantService } from '../tenant/tenant.service';
 import { WizardService } from '../wizard/wizard.service';
 import { TraceService } from '../common/trace.service';
+import { RUN_SPAN_SCOPE } from '../common/agentloop-sink';
 
 interface ToolDefinition { name:string;description:string;inputSchema:Record<string,unknown> }
 interface TaskContext { runId:string;clientCode:string;requestId:string;userId?:string }
@@ -21,6 +22,8 @@ const objectSchema=(required:string[]=[],properties:Record<string,unknown>={})=>
 
 @Injectable()
 export class McpService {
+ /** 已补过运行级 span 的 run，避免终态后的重复调用重复上报（进程内，重启即忘，重复一条无害）。 */
+ private readonly finishedRuns=new Set<string>();
  constructor(private readonly wizard:WizardService,private readonly match:MatchService,private readonly preview:PreviewService,private readonly tenant:TenantService,private readonly p3:P3Service,private readonly p3b:P3bService,private readonly p3c:P3cService,private readonly p4:P4Service,private readonly store:ArtifactStoreService,private readonly proofs:ApprovalProofService,private readonly trace:TraceService){}
 
  // 二级打点：MCP 工具内部子步骤 span（controller 的 tool.call/result 是入口，这里是阶段内部）。
@@ -41,18 +44,63 @@ export class McpService {
   'chatflows-p2':[this.tool('match','模板过滤、排序与裁决',['clientCode','triage'],{clientCode:{type:'string',minLength:1},triage:triageSchema}),this.tool('preview','渲染命中模板 v0 预览',['templateId'])],
   'chatflows-p3':[this.tool('deriveGuidance','派生五字段指导',['triage']),this.tool('injectSections','按标注注入模板章节',['match','guidance']),this.tool('writeBack','校验并打包模板回写结果',['package'])],
   'chatflows-p3b':[this.tool('generate','生成可导入工作流 YAML',['triage','guidance']),this.tool('selfcheck','执行 11 项结构自检',['yaml'])],
-  'chatflows-p3c':[this.tool('listSkillCandidates','按行业与场景筛选 Skill',['scenarios']),this.tool('listToolCandidates','按租户筛选 MCP 工具',['clientCode']),this.tool('renderPersona','确定性渲染 AGENTS/SOUL',['guidance']),this.tool('composeBlueprint','合并四位专家产出为 Blueprint',['persona','business','skills','tools']),this.tool('blueprintSelfcheck','执行 13 项 Blueprint 自检',['blueprint']),this.tool('persistBlueprint','自检后整体覆盖写 DRAFT Blueprint',['runId','blueprint'])],
-  'chatflows-p4':[this.tool('import','审批闸门后导入工作流或暂存 Blueprint',['runId','clientCode','path'],{approval:{type:'object',additionalProperties:true,required:['approval_id','decision','proof'],properties:{approval_id:{type:'string',minLength:1},decision:{type:'string',enum:['APPROVE','DENY']},proof:{type:'string',minLength:1}}}}),this.tool('bindProject','绑定项目或运行时智能体（P3C 路径的 userId 由服务端从批准该 run 的 Human 派生，传入值被忽略）',['clientCode','externalId','path']),this.tool('dryRun','执行产物冒烟',['path'])],
+  'chatflows-p3c':[this.tool('listSkillCandidates','按行业与场景筛选 Skill',['scenarios']),this.tool('listToolCandidates','按租户筛选 MCP 工具',['clientCode']),this.tool('renderPersona','确定性渲染 AGENTS/SOUL；guidance 可省略或传 guidance@vN，省略时回读已落库的 guidance',[]),this.tool('submitExpertResult','提交单个专家产出（禁止覆盖同 role 已提交结果）',['role','payload'],{role:{type:'string',enum:['persona-expert','business-expert','skill-expert','tool-expert']},payload:{description:'专家产出对象或其 JSON'}}),this.tool('composeBlueprint','合并四位专家产出为 Blueprint；专家参数可省略，省略时从已提交的 expert_result 回读',[]),this.tool('blueprintSelfcheck','执行 14 项 Blueprint 自检；blueprint 可省略，省略时回读 composeBlueprint 暂存的 blueprint_draft',[]),this.tool('persistBlueprint','自检后整体覆盖写 DRAFT Blueprint；blueprint 可省略，省略时回读 blueprint_draft',['runId'])],
+  'chatflows-p4':[this.tool('import','审批闸门后导入工作流或暂存 Blueprint；path 可省略（服务端用 run.build_path 回读 Nest 产物，不读共享目录文件）',['runId','clientCode'],{approval:{type:'object',additionalProperties:true,required:['approval_id','decision','proof'],properties:{approval_id:{type:'string',minLength:1},decision:{type:'string',enum:['APPROVE','DENY']},proof:{type:'string',minLength:1}}}}),this.tool('bindProject','绑定项目或运行时智能体（P3C 路径的 userId 由服务端从批准该 run 的 Human 派生，传入值被忽略）；path 可省略',['clientCode','externalId']),this.tool('dryRun','执行产物冒烟；path 可省略',[])],
  };const tools=definitions[server];if(!tools)throw new Error('unknown MCP server: '+server);return tools;}
 
  async call(server:string,name:string,a:Record<string,any>):Promise<unknown>{
   if(!this.list(server).some(t=>t.name===name))throw new Error('unknown tool: '+server+'.'+name);const ctx=this.context(a);await this.store.ensureRun(ctx.runId,ctx.clientCode);
+  let result:unknown,failure:unknown;
+  try{result=await this.dispatch(server,name,a,ctx);}catch(error){failure=error;}
+  await this.finishRunSpan(ctx,failure===undefined?result:{error:failure instanceof Error?failure.message:String(failure)});
+  if(failure!==undefined)throw failure;
+  return result;
+ }
+
+ private dispatch(server:string,name:string,a:Record<string,any>,ctx:TaskContext):Promise<unknown>{
   if(server==='chatflows-p1')return this.callP1(name,a,ctx);
   if(server==='chatflows-p2')return this.callP2(name,a,ctx);
   if(server==='chatflows-p3')return this.callP3(name,a,ctx);
   if(server==='chatflows-p3b')return this.callP3b(name,a,ctx);
   if(server==='chatflows-p3c')return this.callP3c(name,a,ctx);
   return this.callP4(name,a,ctx);
+ }
+
+ /**
+  * 运行级 AGENT span：run 走到终态（SUCCEEDED/FAILED/ABORTED）时补一条，整条 run 一次。
+  *
+  * 为什么必须有它：AgentLoop 面板顶部的「输入 / 输出」摘要与「Agents 数」只认 AGENT/ENTRY
+  * 类 span（loongsuite otel-util-genai 的 GenAiSpanKindValues），叶子 execute_tool 上的正文
+  * 再全也不会被汇总——以前 Nest 只发平铺的工具 span，于是控制台上每个节点点开能看到
+  * gen_ai.output.messages 有值，可 trace 级的输入/输出栏永远是「–」，Agents 数永远是 0。
+  * 这条 span 把「用户最初要什么」（triage/wizard_state）与「最终产出什么」（终态与产物）
+  * 放在同一棵树的 AGENT 节点上，摘要才有东西可读。
+  *
+  * 终态由 run 表判定，不靠调用方传，因此 P1 gate 中止 / P2 EARLY_EXIT / P4 拒绝 /
+  * dryRun 成功 / failP4 打死这五条路径都自动覆盖，无需逐处埋点。上报失败不影响主流程（A12）。
+  */
+ private async finishRunSpan(ctx:TaskContext,output:unknown):Promise<void>{
+  try{
+   if(this.finishedRuns.has(ctx.runId))return;
+   const run=await this.store.getRun(ctx.runId);
+   if(!['SUCCEEDED','FAILED','ABORTED'].includes(run.status))return;
+   // 进程内去重：终态 run 的后续调用会被各阶段的状态校验拒掉，但那条失败路径同样会走到这里，
+   // 不挡住就会给同一个 run 重复发运行级 span。上限兜底，避免长命进程里无界增长。
+   if(this.finishedRuns.size>5000)this.finishedRuns.clear();
+   this.finishedRuns.add(ctx.runId);
+   const triage=await this.store.latestArtifact<Triage>(ctx.runId,'triage').catch(()=>undefined);
+   const wizard=triage?undefined:await this.store.latestArtifact<Record<string,unknown>>(ctx.runId,'wizard_state').catch(()=>undefined);
+   const blueprint=await this.store.latestArtifact<AgentBlueprint>(ctx.runId,'blueprint').catch(()=>undefined);
+   const started=Date.parse(run.created_at);
+   this.trace.step(RUN_SPAN_SCOPE,'finished',{
+    run_id:ctx.runId,client_code:ctx.clientCode,request_id:ctx.requestId,
+    agent_name:blueprint?.payload?.runtimeAgentId??'vibe-sales-builder',
+    run_status:run.status,build_path:run.build_path,
+    run_input:triage?.payload??wizard?.payload,
+    run_output:{status:run.status,build_path:run.build_path,result:output},
+    ms:Number.isFinite(started)?Math.max(1,Date.now()-started):undefined,
+   });
+  }catch{/* A12：旁路，观测失败不影响业务回包 */}
  }
 
  private async callP1(name:string,a:Record<string,any>,ctx:TaskContext){const run=await this.store.getRun(ctx.runId);if(run.current_phase!==ProductPhase.P1_WIZARD_INTENT||!['RUNNING','WAITING_HUMAN'].includes(run.status))throw new Error('P1 run is not active');await this.store.updateRun(ctx.runId,{status:'RUNNING'});
@@ -67,11 +115,111 @@ export class McpService {
 
  private async callP3b(name:string,a:Record<string,any>,ctx:TaskContext){await this.requirePath(ctx.runId,'P3B');if(name==='generate'){const pkg=this.p3b.generate(await this.requireArtifact(ctx.runId,'triage'),await this.requireArtifact(ctx.runId,'guidance'));await this.store.putArtifact(ctx.runId,'flow_yaml',pkg,'flow-generate');this.mark('P3B',name,'flow.generated',ctx,{format:(pkg as any)?.format,workflow_file:(pkg as any)?.workflowFile});return pkg;}const pkg=await this.requireArtifact<any>(ctx.runId,'flow_yaml');const check=this.p3b.selfcheck(pkg);await this.store.putArtifact(ctx.runId,'flow_check',check,'flow-generate');this.mark('P3B',name,'selfcheck',ctx,{ok:check.ok,failed:check.ok?undefined:check.checks.filter(c=>!c.ok).map(c=>c.id).join(',')});if(!check.ok)throw new Error('P3B selfcheck failed');await this.readyForP4(ctx.runId);return check;}
 
- private async callP3c(name:string,a:Record<string,any>,ctx:TaskContext){await this.requirePath(ctx.runId,'P3C');if(name==='listSkillCandidates'){const skills=await this.p3c.listSkillCandidates(a.industry,a.scenarios??[]);this.mark('P3C',name,'skills.listed',ctx,{count:Array.isArray(skills)?skills.length:undefined});return skills;}if(name==='listToolCandidates'){const tools=await this.p3c.listToolCandidates(ctx.clientCode);this.mark('P3C',name,'tools.listed',ctx,{count:Array.isArray(tools)?tools.length:undefined});return tools;}if(name==='renderPersona'){const persona=this.p3c.renderPersona(this.asObject(a.guidance,'guidance') as unknown as Guidance);this.mark('P3C',name,'persona.rendered',ctx,{agents_md_chars:typeof (persona as any)?.agentsMd==='string'?(persona as any).agentsMd.length:undefined,soul_chars:typeof (persona as any)?.soulMd==='string'?(persona as any).soulMd.length:undefined});return persona;}if(name==='composeBlueprint'){const triage=await this.requireArtifact<Triage>(ctx.runId,'triage'),guidance=await this.requireArtifact<Guidance>(ctx.runId,'guidance'),batchId=randomUUID();// 四个专家产物常以 JSON 字符串传入；不解析的话 Array.isArray(skills) 为 false 会静默退回
-// 库默认值、persona.agentsMd 变 undefined，composeBlueprint 于是产出「空壳」Blueprint
-// （agentsMd 只剩「业务规则：」、skills 只有 human-handoff），且不报任何错。
-const persona=this.parseMaybeJson(a.persona),business=this.parseMaybeJson(a.business),skills=this.parseMaybeJson(a.skills),tools=this.parseMaybeJson(a.tools);
-const expertInputs=[['persona-expert',persona],['business-expert',business],['skill-expert',skills],['tool-expert',tools]] as const;if(expertInputs.some(([,payload])=>payload==null))throw new Error('P3C requires four expert results');await this.store.putArtifact(ctx.runId,'expert_dispatch',{batchId,roles:expertInputs.map(([role])=>role)},'blueprint-compose');for(const[role,payload]of expertInputs)await this.store.putArtifact(ctx.runId,'expert_result',{role,batchId,payload},role);this.mark('P3C',name,'experts.collected',ctx,{batch_id:batchId,roles:expertInputs.map(([role])=>role).join(',')});const blueprint=await this.p3c.composeBlueprint({runId:ctx.runId,clientCode:ctx.clientCode,triage,guidance,experts:{persona,business,skills,tools}});this.mark('P3C',name,'blueprint.composed',ctx,{runtime_agent_id:(blueprint as any)?.runtimeAgentId,skills:Array.isArray((blueprint as any)?.skills)?(blueprint as any).skills.length:undefined});return blueprint;}if(name==='blueprintSelfcheck'){const check=await this.p3c.blueprintSelfcheck(this.requireBlueprint(a.blueprint));await this.store.putArtifact(ctx.runId,'blueprint_check',check,'blueprint-compose');this.mark('P3C',name,'selfcheck',ctx,{ok:check.ok,failed:check.ok?undefined:check.checks.filter(c=>!c.ok).map(c=>c.id).join(',')});return check;}const bp=this.requireBlueprint(a.blueprint);const record=await this.p3c.persistBlueprint(ctx.runId,bp);await this.store.putArtifact(ctx.runId,'blueprint',record.payload,'blueprint-compose');this.mark('P3C',name,'blueprint.persisted',ctx,{blueprint_id:(record as any)?.payload?.blueprintId??(bp as any)?.blueprintId});await this.readyForP4(ctx.runId);return record;}
+ private static readonly EXPERT_ROLES=['persona-expert','business-expert','skill-expert','tool-expert'] as const;
+
+ private async callP3c(name:string,a:Record<string,any>,ctx:TaskContext){
+  await this.requirePath(ctx.runId,'P3C');
+  if(name==='listSkillCandidates'){const skills=await this.p3c.listSkillCandidates(a.industry,a.scenarios??[]);this.mark('P3C',name,'skills.listed',ctx,{count:Array.isArray(skills)?skills.length:undefined});return skills;}
+  if(name==='listToolCandidates'){const tools=await this.p3c.listToolCandidates(ctx.clientCode);this.mark('P3C',name,'tools.listed',ctx,{count:Array.isArray(tools)?tools.length:undefined});return tools;}
+  if(name==='renderPersona'){const guidance=await this.resolveGuidance(ctx.runId,a.guidance);const persona=this.p3c.renderPersona(guidance);this.mark('P3C',name,'persona.rendered',ctx,{agents_md_chars:typeof (persona as any)?.agentsMd==='string'?(persona as any).agentsMd.length:undefined,soul_chars:typeof (persona as any)?.soulMd==='string'?(persona as any).soulMd.length:undefined});return persona;}
+  if(name==='submitExpertResult'){
+   const role=String(a.role??'');
+   if(!(McpService.EXPERT_ROLES as readonly string[]).includes(role))throw new Error('role must be one of '+McpService.EXPERT_ROLES.join(', '));
+   if(a.payload===undefined||a.payload===null)throw new Error('payload is required');
+   const payload=this.parseMaybeJson(a.payload);
+   if(payload===null||payload===undefined||(typeof payload!=='object'&&typeof payload!=='string'))throw new Error('payload must be an object or JSON object/array');
+   const existing=await this.store.listArtifacts(ctx.runId,'expert_result');
+   if(existing.some(art=>art.written_by===role))throw new Error('expert result already submitted for role='+role+'; overwrite refused');
+   const art=await this.store.putArtifact(ctx.runId,'expert_result',{role,payload},role);
+   this.mark('P3C',name,'expert.submitted',ctx,{role,version:art.version});
+   return{role,submitted:true,version:art.version};
+  }
+  if(name==='composeBlueprint'){
+   const triage=await this.requireArtifact<Triage>(ctx.runId,'triage'),guidance=await this.requireArtifact<Guidance>(ctx.runId,'guidance'),batchId=randomUUID();
+   // 四个专家产物常以 JSON 字符串传入；不解析的话 Array.isArray(skills) 为 false 会静默退回
+   // 库默认值、persona.agentsMd 变 undefined，composeBlueprint 于是产出「空壳」Blueprint
+   // （agentsMd 只剩「业务规则：」、skills 只有 human-handoff），且不报任何错。
+   // 也可全部省略：从 submitExpertResult 已落库的 expert_result 按 role 回读。
+   const experts=await this.resolveExpertInputs(ctx.runId,a);
+   const expertInputs=[['persona-expert',experts.persona],['business-expert',experts.business],['skill-expert',experts.skills],['tool-expert',experts.tools]] as const;
+   await this.store.putArtifact(ctx.runId,'expert_dispatch',{batchId,roles:expertInputs.map(([role])=>role)},'blueprint-compose');
+   // 仅在调用方显式传入专家产物时再写一遍；已由 submitExpertResult 落库的不覆盖。
+   const submitted=await this.store.listArtifacts(ctx.runId,'expert_result');
+   for(const[role,payload]of expertInputs){
+    if(submitted.some(art=>art.written_by===role))continue;
+    await this.store.putArtifact(ctx.runId,'expert_result',{role,batchId,payload},role);
+   }
+   this.mark('P3C',name,'experts.collected',ctx,{batch_id:batchId,roles:expertInputs.map(([role])=>role).join(',')});
+   const blueprint=await this.p3c.composeBlueprint({runId:ctx.runId,clientCode:ctx.clientCode,triage,guidance,experts});
+   await this.store.putArtifact(ctx.runId,'blueprint_draft',blueprint,'blueprint-compose');
+   this.mark('P3C',name,'blueprint.composed',ctx,{runtime_agent_id:(blueprint as any)?.runtimeAgentId,skills:Array.isArray((blueprint as any)?.skills)?(blueprint as any).skills.length:undefined,rules:Array.isArray((blueprint as any)?.rules)?(blueprint as any).rules.length:0});
+   return blueprint;
+  }
+  if(name==='blueprintSelfcheck'){
+   const bp=await this.resolveBlueprint(ctx.runId,a.blueprint);
+   const check=await this.p3c.blueprintSelfcheck(bp);
+   await this.store.putArtifact(ctx.runId,'blueprint_check',check,'blueprint-compose');
+   this.mark('P3C',name,'selfcheck',ctx,{ok:check.ok,failed:check.ok?undefined:check.checks.filter(c=>!c.ok).map(c=>c.id).join(',')});
+   return check;
+  }
+  const bp=await this.resolveBlueprint(ctx.runId,a.blueprint);
+  const record=await this.p3c.persistBlueprint(ctx.runId,bp);
+  await this.store.putArtifact(ctx.runId,'blueprint',record.payload,'blueprint-compose');
+  this.mark('P3C',name,'blueprint.persisted',ctx,{blueprint_id:(record as any)?.payload?.blueprintId??(bp as any)?.blueprintId});
+  await this.readyForP4(ctx.runId);
+  return record;
+ }
+
+ /** 显式参数优先；缺省时从 expert_result 按 written_by=role 回读，缺哪个点名哪个。 */
+ private async resolveExpertInputs(runId:string,a:Record<string,any>):Promise<{persona:unknown;business:unknown;skills:unknown;tools:unknown}>{
+  const fromArgs={
+   persona:a.persona===undefined?undefined:this.parseMaybeJson(a.persona),
+   business:a.business===undefined?undefined:this.parseMaybeJson(a.business),
+   skills:a.skills===undefined?undefined:this.parseMaybeJson(a.skills),
+   tools:a.tools===undefined?undefined:this.parseMaybeJson(a.tools),
+  };
+  const needStore=Object.values(fromArgs).some(v=>v===undefined||v===null);
+  if(!needStore)return fromArgs as {persona:unknown;business:unknown;skills:unknown;tools:unknown};
+  const arts=await this.store.listArtifacts(runId,'expert_result');
+  const latestByRole=new Map<string,unknown>();
+  for(const art of arts){
+   const role=art.written_by;
+   if(!(McpService.EXPERT_ROLES as readonly string[]).includes(role))continue;
+   const body=art.payload as Record<string,unknown>|undefined;
+   const payload=body&&typeof body==='object'&&'payload' in body?body.payload:body;
+   latestByRole.set(role,payload);
+  }
+  const roleKey:{role:typeof McpService.EXPERT_ROLES[number];key:'persona'|'business'|'skills'|'tools'}[]=[
+   {role:'persona-expert',key:'persona'},{role:'business-expert',key:'business'},
+   {role:'skill-expert',key:'skills'},{role:'tool-expert',key:'tools'},
+  ];
+  const missing:string[]=[];
+  const out:{persona:unknown;business:unknown;skills:unknown;tools:unknown}={persona:null,business:null,skills:null,tools:null};
+  for(const{role,key}of roleKey){
+   const value=fromArgs[key]!==undefined&&fromArgs[key]!==null?fromArgs[key]:latestByRole.get(role);
+   if(value===undefined||value===null)missing.push(role);
+   else out[key]=value;
+  }
+  if(missing.length)throw new Error('P3C requires four expert results; missing: '+missing.join(', '));
+  return out;
+ }
+
+ /** 显式 guidance 优先；指针 guidance@vN 或省略时回读 deriveGuidance 已落库的 guidance。 */
+ private async resolveGuidance(runId:string,value:unknown):Promise<Guidance>{
+  const pointer=typeof value==='string'&&/^guidance@v\d+$/i.test(value.trim());
+  if(value!==undefined&&value!==null&&value!==''&&!pointer)return this.asObject(value,'guidance') as unknown as Guidance;
+  const art=await this.store.latestArtifact<Guidance>(runId,'guidance');
+  if(!art)throw new Error('guidance omitted and guidance artifact missing; wait for deriveGuidance');
+  return art.payload;
+ }
+
+ /** 显式 blueprint 优先；缺省时回读 composeBlueprint 暂存的 blueprint_draft。 */
+ private async resolveBlueprint(runId:string,value:unknown):Promise<AgentBlueprint>{
+  if(value!==undefined&&value!==null&&!(typeof value==='string'&&!value.trim()))return this.requireBlueprint(value);
+  const draft=await this.store.latestArtifact<AgentBlueprint>(runId,'blueprint_draft');
+  if(!draft)throw new Error('blueprint omitted and blueprint_draft missing; call composeBlueprint first');
+  return this.requireBlueprint(draft.payload);
+ }
 
  // blueprint 必须是 composeBlueprint 返回的完整对象；Worker 只回传 blueprintId 或裁剪过的
  // 对象时，旧代码直接 as AgentBlueprint 进 selfcheck，在 bp.skills.map() 处抛
@@ -121,14 +269,23 @@ const expertInputs=[['persona-expert',persona],['business-expert',business],['sk
     const approvalId=randomUUID();await this.store.transitionApproval(ctx.runId,approvalId,null,{approval_id:approvalId,action:'P4_IMPORT',status:'PENDING',requested_at:new Date().toISOString()});await this.store.updateRun(ctx.runId,{status:'WAITING_HUMAN',current_phase:ProductPhase.P4_IMPORT_RUN});this.mark('P4',name,'approval.requested',ctx,{approval_id:approvalId,approval_state:'pending_approval'});return{status:'pending_approval',approval_id:approvalId,run_id:ctx.runId};
    }
    if(typeof a.approval!=='object'||Array.isArray(a.approval))throw new Error('approval must be an object {approval_id, decision, proof}, not a JSON string or array');
-   const decision=a.approval as Record<string,unknown>,proof=this.proofs.verify(String(decision.proof??''));if(pending?.payload?.status!=='PENDING'||proof.run_id!==ctx.runId||proof.approval_id!==pending.payload.approval_id||proof.approval_id!==decision.approval_id)throw new Error('approval credential mismatch or already consumed');
+   const decision=a.approval as Record<string,unknown>,proof=this.proofs.verify(String(decision.proof??''));
+   const idsMatch=proof.run_id===ctx.runId&&proof.approval_id===pending?.payload?.approval_id&&proof.approval_id===decision.approval_id;
+   if(!idsMatch)throw new Error('approval credential mismatch or already consumed');
+   if(pending?.payload?.status!=='PENDING'){
+    const finished=proof.decision==='APPROVE'?await this.finishedP4(ctx.runId):null;
+    if(finished){this.mark('P4',name,'import.replayed',ctx,{approval_id:proof.approval_id,approval_state:'approved',external_id:finished.imported?.external_id,build_path:run.build_path});return finished.imported;}
+    throw new Error('approval credential mismatch or already consumed');
+   }
    this.mark('P4',name,'approval.verified',ctx,{approval_id:proof.approval_id,decision:proof.decision,actor:proof.actor});
    await this.store.transitionApproval(ctx.runId,proof.approval_id,'PENDING',{...pending.payload,status:proof.decision==='APPROVE'?'PROCESSING':'DENIED',actor:proof.actor,decided_at:new Date().toISOString()});
    if(proof.decision==='DENY'){await this.store.putArtifact(ctx.runId,'evidence',{event:'APPROVAL_DENIED',actor:proof.actor,approval_id:proof.approval_id,at:new Date().toISOString()},'flow-import-run');await this.store.updateRun(ctx.runId,{status:'ABORTED'});this.mark('P4',name,'approval.denied',ctx,{approval_id:proof.approval_id,approval_state:'denied',actor:proof.actor});return{status:'ABORTED',run_id:ctx.runId};}
    await this.store.updateRun(ctx.runId,{status:'RUNNING',current_phase:ProductPhase.P4_IMPORT_RUN});
-   try{const{payload,check}=await this.p4Input(ctx.runId,run.build_path);const imported=await this.p4.import({runId:ctx.runId,clientCode:ctx.clientCode,path:run.build_path,payload,check});await this.store.putArtifact(ctx.runId,'import_result',{imported},'flow-import-run');await this.store.transitionApproval(ctx.runId,proof.approval_id,'PROCESSING',{...pending.payload,status:'CONSUMED',actor:proof.actor,consumed_at:new Date().toISOString()});this.mark('P4',name,'import.done',ctx,{approval_id:proof.approval_id,approval_state:'approved',external_id:imported?.external_id,build_path:run.build_path});return imported;}catch(error){return this.failP4(ctx.runId,'IMPORT',error,ctx);}
+   try{const{payload,check}=await this.p4Input(ctx.runId,run.build_path);const imported=await this.p4.import({runId:ctx.runId,clientCode:ctx.clientCode,path:run.build_path,payload,check});await this.store.putArtifact(ctx.runId,'import_result',{imported},'flow-import-run');await this.store.transitionApproval(ctx.runId,proof.approval_id,'PROCESSING',{...pending.payload,status:'CONSUMED',actor:proof.actor,consumed_at:new Date().toISOString()});this.mark('P4',name,'import.done',ctx,{approval_id:proof.approval_id,approval_state:'approved',external_id:imported?.external_id,build_path:run.build_path});return imported;}catch(error){return this.failP4(ctx.runId,'IMPORT',error,ctx,{approvalId:proof.approval_id,processingPayload:{...pending.payload,status:'PROCESSING',actor:proof.actor,decided_at:new Date().toISOString()}});}
   }
   if(name==='bindProject'){
+   const replayed=await this.finishedP4(ctx.runId);
+   if(replayed?.binding){this.mark('P4',name,'bind.replayed',ctx,{external_id:replayed.imported?.external_id,user_id:(replayed.binding as any)?.user_id,build_path:run.build_path});return replayed.binding;}
    await this.requireApprovedP4(ctx.runId);
    // userId 曾经是让 Worker 自由传的参数：Worker 传什么这里就信什么，容易传成裸词
    // "admin"（或干脆漏传变成字面量 "undefined"），落进 binding 表的 user_id 就再也
@@ -145,6 +302,8 @@ const expertInputs=[['persona-expert',persona],['business-expert',business],['sk
    this.mark('P4',name,'bind.actor_resolved',ctx,{actor:approvalActor});
    try{const saved=await this.requireArtifact<any>(ctx.runId,'import_result'),{payload}=await this.p4Input(ctx.runId,run.build_path);const bp=run.build_path==='P3C'?payload as AgentBlueprint:undefined;const binding=await this.p4.bindProject({clientCode:ctx.clientCode,userId:approvalActor,runtimeAgentId:bp?.runtimeAgentId,blueprintId:bp?.blueprintId,externalId:saved.imported.external_id,path:run.build_path,actor:approvalActor});await this.store.putArtifact(ctx.runId,'import_result',{...saved,binding},'flow-import-run');this.mark('P4',name,'bind.done',ctx,{external_id:saved.imported?.external_id,user_id:(binding as any)?.user_id,build_path:run.build_path});return binding;}catch(error){return this.failP4(ctx.runId,'BIND',error,ctx);}
   }
+  const replayedDry=await this.finishedP4(ctx.runId);
+  if(replayedDry){this.mark('P4',name,'dryrun.replayed',ctx,{external_id:replayedDry.imported?.external_id,dry_run_ok:replayedDry.dry_run?.ok,run_status:'SUCCEEDED'});return{dry_run:replayedDry.dry_run,status:'SUCCEEDED'};}
   await this.requireApprovedP4(ctx.runId);
   try{const saved=await this.requireArtifact<any>(ctx.runId,'import_result'),{payload,check}=await this.p4Input(ctx.runId,run.build_path);const dryRun=await this.p4.dryRun({path:run.build_path,payload,externalId:saved.imported.external_id,userId:a.userId??saved.binding?.user_id});await this.store.putArtifact(ctx.runId,'dry_run',dryRun,'flow-import-run');await this.store.putArtifact(ctx.runId,'evidence',{event:'P4_EXECUTED',external_id:saved.imported.external_id,dry_run_ok:dryRun.ok,at:new Date().toISOString()},'flow-import-run');await this.store.updateRun(ctx.runId,{status:'SUCCEEDED'});this.mark('P4',name,'dryrun.done',ctx,{external_id:saved.imported?.external_id,dry_run_ok:dryRun.ok,run_status:'SUCCEEDED'});return{dry_run:dryRun,selfcheck:check,status:'SUCCEEDED'};}catch(error){return this.failP4(ctx.runId,'DRY_RUN',error,ctx);}
  }
@@ -155,13 +314,25 @@ const expertInputs=[['persona-expert',persona],['business-expert',business],['sk
  private async guidance(ctx:TaskContext,writer:string){const existing=await this.store.latestArtifact<Guidance>(ctx.runId,'guidance');if(existing)return existing.payload;const value=this.p3.deriveGuidance(await this.requireArtifact(ctx.runId,'triage'));await this.store.putArtifact(ctx.runId,'guidance',value,writer);return value;}
  private async readyForP4(runId:string){await this.store.updateRun(runId,{status:'RUNNING',current_phase:ProductPhase.P4_IMPORT_RUN});}
  private async requireApprovedP4(runId:string){const run=await this.store.getRun(runId),approval=await this.store.latestArtifact<any>(runId,'approval');if(run.status!=='RUNNING'||approval?.payload?.status!=='CONSUMED')throw new Error('P4 continuation requires active run and consumed Human approval');}
+ /** HTTP 审批通道（Nest local）可能已经跑完 P4。同一条 proof 再走 MCP 时回放已落库产物，避免 already consumed。 */
+ private async finishedP4(runId:string){const run=await this.store.getRun(runId);if(run.status!=='SUCCEEDED')return null;const saved=await this.store.latestArtifact<any>(runId,'import_result'),dry=await this.store.latestArtifact<any>(runId,'dry_run');if(!saved?.payload?.imported||!dry?.payload)return null;return{imported:saved.payload.imported,binding:saved.payload.binding,dry_run:dry.payload};}
  /**
   * 环境/配置没配好（缺 URL、令牌、下游不可达）与「产物不合格」是两回事：前者重试就能过，
   * 把 run 打成 FAILED 会让整条流水线需要人工改库才能续跑（实测 dry-run 少一个 env
   * 就把已 import+bind 成功的 run 判死）。这类错误只留 evidence，让 run 保持可重试。
+  * 405 同属这一类：agent-runtime ingest 端点未部署/路由不匹配，是环境缺陷不是产物缺陷。
   */
- private static retriableP4(message:string):boolean{return /required for|are required|ECONNREFUSED|ENOTFOUND|ETIMEDOUT|fetch failed|socket hang up|502|503|504/i.test(message);}
- private async failP4(runId:string,stage:string,error:unknown,ctx?:TaskContext):Promise<never>{const message=error instanceof Error?error.message:String(error);const retriable=McpService.retriableP4(message);try{await this.store.putArtifact(runId,'evidence',{event:retriable?'P4_BLOCKED':'P4_FAILED',stage,error:message.slice(0,500),retriable,at:new Date().toISOString()},'flow-import-run');}finally{if(!retriable)await this.store.updateRun(runId,{status:'FAILED'});}
+ private static retriableP4(message:string):boolean{return /required for|are required|ECONNREFUSED|ENOTFOUND|ETIMEDOUT|fetch failed|socket hang up|405|502|503|504/i.test(message);}
+ /**
+  * IMPORT 阶段失败前，proof 校验通过就已把 approval 从 PENDING 跃迁到 PROCESSING（callP4
+  * 第126行），与后续 ingest 是否成功无关。若不在此处回滚，PROCESSING 是终态死胡同：
+  * requireApprovedP4 只认 CONSUMED，同一 proof 再也无法重放，只能靠 Manager 重开一轮
+  * APPROVAL_REQUIRED。proof 本身是无状态 HMAC 签名+15分钟时效（approval-proof.service.ts），
+  * 不是一次性令牌，回滚到 PENDING 后原 proof 在有效期内可以重放，不构成审批绕过。
+  */
+ private async failP4(runId:string,stage:string,error:unknown,ctx?:TaskContext,rollback?:{approvalId:string;processingPayload:Record<string,unknown>}):Promise<never>{const message=error instanceof Error?error.message:String(error);const retriable=McpService.retriableP4(message);
+  if(rollback){try{await this.store.transitionApproval(runId,rollback.approvalId,'PROCESSING',{...rollback.processingPayload,status:'PENDING',decided_at:undefined,rolled_back_at:new Date().toISOString(),rollback_reason:message.slice(0,200)});}catch{/* approval 已被并发消费或已不在 PROCESSING，不覆盖更新的状态 */}}
+  try{await this.store.putArtifact(runId,'evidence',{event:retriable?'P4_BLOCKED':'P4_FAILED',stage,error:message.slice(0,500),retriable,at:new Date().toISOString()},'flow-import-run');}finally{if(!retriable)await this.store.updateRun(runId,{status:'FAILED'});}
   // 区分可重试(blocked，run 保持可续跑)与致命(failed，run 打死)——AgentLoop 上要能一眼看出该重试还是该改产物。
   // event 用 .error 结尾，让 levelOf() 归为 warn（trace.service 按事件名推 level，不看 data）。
   if(ctx)this.mark('P4',stage.toLowerCase(),retriable?'blocked.error':'failed.error',ctx,{stage,retriable,run_status:retriable?'RUNNING':'FAILED',error:message.slice(0,200)});

@@ -13,6 +13,7 @@
  *
  *   HIGRESS_LLM_API_KEY=sk-new node scripts/rotate-higress-llm-key.mjs \
  *     --target agentteams --env docs/agentteams/local-development.env.local \
+ *     --url https://example.maas.aliyuncs.com/compatible-mode/v1 \
  *     --apply --confirm rotate-llm-key
  */
 import { execFileSync } from 'node:child_process';
@@ -26,9 +27,10 @@ const CONFIRM = 'rotate-llm-key';
 const argv = process.argv.slice(2);
 
 function usage() {
-  return `usage: node scripts/rotate-higress-llm-key.mjs --target local|agentteams --env <file> [--apply --confirm ${CONFIRM}] [--no-restart] [--no-persist] [--provider <name>] [--key-file <file>]
+  return `usage: node scripts/rotate-higress-llm-key.mjs --target local|agentteams --env <file> [--apply --confirm ${CONFIRM}] [--no-restart] [--no-persist] [--provider <name>] [--key-file <file>] [--url <https://...>]
 
 New key: HIGRESS_LLM_API_KEY, or --key-file, or the env file's HIGRESS_DASHSCOPE_API_KEY / AGENTTEAMS_LLM_API_KEY.
+Vendor URL: --url, or HIGRESS_LLM_API_URL, or HIGRESS_OPENAI_API_URL. Omit to leave the Provider endpoint unchanged.
 `;
 }
 
@@ -56,6 +58,7 @@ const target = takeOption('--target');
 const envFileArg = takeOption('--env');
 const providerOverride = takeOption('--provider');
 const keyFile = takeOption('--key-file');
+const urlOverride = takeOption('--url');
 if (argv.length) throw new Error(`unexpected arguments: ${argv.join(' ')}\n${usage()}`);
 if (target !== 'local' && target !== 'agentteams') {
   throw new Error(`--target local|agentteams is required\n${usage()}`);
@@ -157,14 +160,16 @@ function resolveAdmin() {
   return { user: nextUser, password: nextPassword, source: 'agentteams-controller' };
 }
 
-function resolveProviderName() {
-  if (providerOverride) return providerOverride;
-  if (optional('HIGRESS_LLM_PROVIDER')) return optional('HIGRESS_LLM_PROVIDER');
-  if (target === 'agentteams') return 'openai-compat';
+function providerNameCandidates() {
+  if (providerOverride) return [providerOverride];
+  if (optional('HIGRESS_LLM_PROVIDER')) return [optional('HIGRESS_LLM_PROVIDER')];
+  if (target === 'agentteams') return ['openai-compat'];
   const providerType = optional('HIGRESS_MODEL_PROVIDER', 'qwen');
-  const openaiApiUrl = optional('HIGRESS_OPENAI_API_URL');
-  if (openaiApiUrl) return providerType === 'qwen' ? 'openai' : providerType;
-  return providerType === 'qwen' ? 'qwen' : providerType;
+  const hasVendorUrl = Boolean(urlOverride || optional('HIGRESS_LLM_API_URL') || optional('HIGRESS_OPENAI_API_URL'));
+  if (hasVendorUrl) {
+    return providerType === 'qwen' ? ['openai', 'qwen'] : [providerType, 'openai', 'qwen'];
+  }
+  return providerType === 'qwen' ? ['qwen', 'openai'] : [providerType, 'qwen'];
 }
 
 function resolveConsoleUrl() {
@@ -218,17 +223,52 @@ function resolveNewKey() {
   return optional('AGENTTEAMS_LLM_API_KEY') || optional('HIGRESS_DASHSCOPE_API_KEY');
 }
 
-function persistTargets(newKey) {
+function privateHttpHost(host) {
+  return host === 'localhost' || host === '127.0.0.1' || host === '::1'
+    || /^10\./.test(host) || /^192\.168\./.test(host)
+    || /^172\.(1[6-9]|2\d|3[01])\./.test(host);
+}
+
+function normalizeVendorApiUrl(raw) {
+  let url;
+  try {
+    url = new URL(String(raw).trim());
+  } catch {
+    throw new Error('vendor API URL is invalid');
+  }
+  if (url.username || url.password) throw new Error('vendor API URL must not contain credentials');
+  if (url.hash) throw new Error('vendor API URL must not contain a hash');
+  if (!(url.protocol === 'https:' || (url.protocol === 'http:' && privateHttpHost(url.hostname)))) {
+    throw new Error('vendor API URL must be HTTPS, or HTTP on a private host');
+  }
+  if (!url.hostname) throw new Error('vendor API URL host is required');
+  return url.href.replace(/\/$/, '');
+}
+
+function resolveVendorApiUrl() {
+  const raw = urlOverride || optional('HIGRESS_LLM_API_URL') || optional('HIGRESS_OPENAI_API_URL');
+  return raw ? normalizeVendorApiUrl(raw) : '';
+}
+
+function existingEndpoint(existing) {
+  const configs = existing?.rawConfigs ?? {};
+  return String(configs.openaiCustomUrl || configs.apiUrl || '').replace(/\/$/, '');
+}
+
+function persistTargets(newKey, newUrl) {
   if (noPersist) return [];
   const targets = [];
   if (target === 'local') {
     targets.push({ file: envFile, key: 'HIGRESS_DASHSCOPE_API_KEY', value: newKey });
+    if (newUrl) targets.push({ file: envFile, key: 'HIGRESS_OPENAI_API_URL', value: newUrl });
   } else {
     const managerEnv = optional('AGENTTEAMS_MANAGER_ENV')
       || path.join(os.homedir(), 'agentteams-manager.env');
     if (fs.existsSync(managerEnv)) {
       targets.push({ file: managerEnv, key: 'AGENTTEAMS_LLM_API_KEY', value: newKey });
+      if (newUrl) targets.push({ file: managerEnv, key: 'AGENTTEAMS_OPENAI_BASE_URL', value: newUrl });
     }
+    if (newUrl) targets.push({ file: envFile, key: 'HIGRESS_OPENAI_API_URL', value: newUrl });
   }
   return targets;
 }
@@ -245,7 +285,6 @@ function upsertEnvLine(file, key, value) {
 
 const consoleUrl = new URL(`${resolveConsoleUrl()}/`);
 const gatewayUrl = resolveGatewayUrl();
-const providerName = resolveProviderName();
 const admin = resolveAdmin();
 const newKey = resolveNewKey();
 if (!newKey) throw new Error('new key missing: set HIGRESS_LLM_API_KEY, --key-file, or the env-file vendor key');
@@ -256,10 +295,10 @@ if (!consumerToken) {
 const probeModel = optional('HIGRESS_PROBE_MODEL')
   || optional('QWEN_MODEL')
   || optional('RUNTIME_MODEL')
-  || 'deepseek-v4-flash-0731';
-const probeModelName = probeModel.replace(/^dashscope:/, '') || 'deepseek-v4-flash-0731';
-const openaiApiUrl = optional('HIGRESS_OPENAI_API_URL');
-const persist = persistTargets(newKey);
+  || 'deepseek-v4-flash';
+const probeModelName = probeModel.replace(/^dashscope:/, '') || 'deepseek-v4-flash';
+const openaiApiUrl = resolveVendorApiUrl();
+const persist = persistTargets(newKey, openaiApiUrl);
 const restartKind = noRestart ? 'none' : (optional('HIGRESS_RESTART_COMMAND') ? 'command' : target);
 let cookie = '';
 
@@ -330,14 +369,42 @@ async function consoleJson(pathname, options = {}) {
 
 function desiredProvider(existing) {
   const next = { ...existing, tokens: [newKey], version: existing.version ?? 0 };
-  if (openaiApiUrl) {
-    next.rawConfigs = {
-      ...(existing.rawConfigs ?? {}),
-      openaiCustomUrl: openaiApiUrl,
-      apiUrl: openaiApiUrl,
-    };
-  }
+  if (!openaiApiUrl) return next;
+  const current = existingEndpoint(existing);
+  if (current === openaiApiUrl && existing.type !== 'qwen') return next;
+  next.type = existing.type === 'qwen' ? 'openai' : (existing.type || 'openai');
+  next.protocol = existing.protocol || 'openai/v1';
+  next.rawConfigs = {
+    ...(existing.rawConfigs ?? {}),
+    openaiCustomUrl: openaiApiUrl,
+    apiUrl: openaiApiUrl,
+    protocol: existing.rawConfigs?.protocol || 'openai',
+  };
   return next;
+}
+
+function serviceSourceName(providerName, existing) {
+  const raw = String(existing?.rawConfigs?.openaiCustomServiceName || '').trim();
+  if (raw) return raw.replace(/\.dns$/i, '');
+  return providerName;
+}
+
+function desiredServiceSource(existingSource, apiUrl) {
+  const url = new URL(apiUrl);
+  const port = url.port ? Number(url.port) : (url.protocol === 'https:' ? 443 : 80);
+  return {
+    ...existingSource,
+    type: existingSource.type || 'dns',
+    domain: url.hostname,
+    port,
+    protocol: url.protocol.replace(':', ''),
+  };
+}
+
+function serviceSourceChanged(existingSource, desiredSource) {
+  return String(existingSource?.domain || '') !== String(desiredSource?.domain || '')
+    || Number(existingSource?.port) !== Number(desiredSource?.port)
+    || String(existingSource?.protocol || '') !== String(desiredSource?.protocol || '');
 }
 
 function tokensEqual(left, right) {
@@ -453,7 +520,21 @@ async function probeGateway() {
   throw new Error(`authorized model probe did not become ready: ${last}`);
 }
 
-function publicPlan(existing, action) {
+async function findExistingProvider() {
+  const candidates = providerNameCandidates();
+  for (const name of candidates) {
+    const existingResponse = await consoleJson(`/v1/ai/providers/${encodeURIComponent(name)}`, { expect: [200, 404] });
+    const existing = unwrap(existingResponse);
+    if (existingResponse && existingResponse?.message !== 'not found' && existing?.name) {
+      return { name, existing };
+    }
+  }
+  throw new Error(`AI provider ${candidates.join('|')} not found on ${consoleUrl.origin}; bootstrap Higress first, this script does not create providers`);
+}
+
+function publicPlan(existing, action, tokenChanged, endpointChanged, providerName) {
+  const fromEndpoint = existingEndpoint(existing);
+  const toEndpoint = openaiApiUrl || fromEndpoint;
   return {
     mode: apply ? 'apply' : 'plan',
     target,
@@ -464,9 +545,13 @@ function publicPlan(existing, action) {
     token: {
       from: redact(existing?.tokens?.[0]),
       to: redact(newKey),
-      changed: !tokensEqual(existing?.tokens, [newKey]),
+      changed: tokenChanged,
     },
-    endpoint: openaiApiUrl || existing?.rawConfigs?.openaiCustomUrl || existing?.rawConfigs?.apiUrl || '',
+    endpoint: {
+      from: fromEndpoint,
+      to: toEndpoint,
+      changed: endpointChanged,
+    },
     persist: persist.map(item => ({ file: item.file, key: item.key })),
     restart: {
       dataplane: restartKind,
@@ -482,16 +567,22 @@ function publicPlan(existing, action) {
 
 try {
 await login();
-const existingResponse = await consoleJson(`/v1/ai/providers/${encodeURIComponent(providerName)}`, { expect: [200, 404] });
-const existing = unwrap(existingResponse);
-if (!existingResponse || existingResponse?.message === 'not found' || !existing?.name) {
-  throw new Error(`AI provider ${providerName} not found on ${consoleUrl.origin}; bootstrap Higress first, this script does not create providers`);
-}
+const { name: providerName, existing } = await findExistingProvider();
 const desired = desiredProvider(existing);
-const changed = !tokensEqual(existing.tokens, desired.tokens)
-  || JSON.stringify(existing.rawConfigs ?? {}) !== JSON.stringify(desired.rawConfigs ?? {});
+const tokenChanged = !tokensEqual(existing.tokens, desired.tokens);
+const endpointChanged = existingEndpoint(existing) !== existingEndpoint(desired);
+const typeChanged = (existing.type || '') !== (desired.type || '');
+const sourceName = serviceSourceName(providerName, existing);
+const sourceResponse = await consoleJson(`/v1/service-sources/${encodeURIComponent(sourceName)}`, { expect: [200, 404] });
+const existingSource = unwrap(sourceResponse);
+const hasSource = Boolean(existingSource?.name && sourceResponse?.message !== 'not found');
+const desiredSource = hasSource && openaiApiUrl
+  ? desiredServiceSource(existingSource, openaiApiUrl)
+  : null;
+const sourceChanged = Boolean(desiredSource && serviceSourceChanged(existingSource, desiredSource));
+const changed = tokenChanged || endpointChanged || typeChanged || sourceChanged;
 const action = changed ? 'update' : 'unchanged';
-const plan = publicPlan(existing, action);
+const plan = publicPlan(existing, action, tokenChanged, endpointChanged, providerName);
 process.stdout.write(`${JSON.stringify(plan, null, 2)}\n`);
 
 if (!apply) {
@@ -500,15 +591,31 @@ if (!apply) {
 }
 
 if (changed) {
-  const put = await request(new URL(`/v1/ai/providers/${encodeURIComponent(providerName)}`, consoleUrl), {
-    method: 'PUT',
-    body: desired,
-    expect: [200, 201],
-  });
-  if (put.status === 405) {
-    throw new Error('PUT /v1/ai/providers (collection) is not used; named PUT returned 405');
+  if (tokenChanged || endpointChanged || typeChanged) {
+    const put = await request(new URL(`/v1/ai/providers/${encodeURIComponent(providerName)}`, consoleUrl), {
+      method: 'PUT',
+      body: desired,
+      expect: [200, 201],
+    });
+    if (put.status === 405) {
+      throw new Error('PUT /v1/ai/providers (collection) is not used; named PUT returned 405');
+    }
   }
-  for (const item of persist) upsertEnvLine(item.file, item.key, item.value);
+  if (sourceChanged) {
+    await request(new URL(`/v1/service-sources/${encodeURIComponent(sourceName)}`, consoleUrl), {
+      method: 'PUT',
+      body: desiredSource,
+      expect: [200, 201],
+    });
+  }
+  for (const item of persist) {
+    if (item.key === 'HIGRESS_OPENAI_API_URL' || item.key === 'AGENTTEAMS_OPENAI_BASE_URL') {
+      if (!endpointChanged) continue;
+    } else if (!tokenChanged) {
+      continue;
+    }
+    upsertEnvLine(item.file, item.key, item.value);
+  }
 }
 
 let restarted = { kind: 'none', detail: 'unchanged, skipped' };
@@ -533,9 +640,10 @@ if (!probe.ok) {
   process.exit(2);
 }
 if (probe.warning) process.stderr.write(`[WARN] ${probe.warning}\n`);
+const updated = [tokenChanged ? 'token' : '', endpointChanged ? 'endpoint' : ''].filter(Boolean).join(' and ');
 const summary = changed
-  ? `[PASS] Higress provider ${providerName} token updated; dataplane ${restarted.detail}; apps not restarted\n`
-  : `[PASS] Higress provider ${providerName} already has this token; skipped write and dataplane restart; apps not restarted\n`;
+  ? `[PASS] Higress provider ${providerName} ${updated} updated; dataplane ${restarted.detail}; apps not restarted\n`
+  : `[PASS] Higress provider ${providerName} already has this token and endpoint; skipped write and dataplane restart; apps not restarted\n`;
 process.stdout.write(summary);
 } catch (error) {
   process.stderr.write(`[FAIL] ${error instanceof Error ? error.message : String(error)}\n`);

@@ -10,6 +10,7 @@ import { runtimeSafeId } from '../../shared/runtime-id';
 import {
   STAGES,
   expertRole,
+  formatRules,
   latestArtifact,
   previewText,
   stageStatus,
@@ -208,6 +209,8 @@ function matchTone(ok) {
           <dd>{{ blueprint.runtimeAgentId }}</dd>
           <dt>skills</dt>
           <dd>{{ (blueprint.skills ?? []).map((s) => s.name).join('、') || '—' }}</dd>
+          <dt>rules</dt>
+          <dd>{{ formatRules(blueprint.rules) }}</dd>
           <dt>自检</dt>
           <dd>{{ check?.ok === false ? 'FAIL' : check?.ok === true ? 'OK' : '—' }}</dd>
         </dl>

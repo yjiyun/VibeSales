@@ -1,0 +1,168 @@
+{
+  "_说明": "谷雨美肤师真实资产蓝图的 single_agent 版本，与 yjiyuncom.guyu.json（multi_stage）配对，用于对比两种运行模式的实际效果。业务资产同源：同一份 Coze 工作流 guyudefinal_dev_0725_31，同一套 soulMd 与同 10 个 library Skill。",
+  "_对比口径说明": "为了让对比只落在「模式」这一个变量上，以下三项与 multi_stage 版逐字一致：prompt.soulMd、skills[] 的 10 个名字与顺序、runtime 三项。真正不同的只有四处：runtimeMode、没有 stages[]、agentsMd 的输出与分流纪律、rules[] 与 tools.allow 的实际生效集合。后两处不是风格取舍而是运行时事实，理由见 _规则差异说明 与 _工具差异说明。",
+  "_作用域说明": "注册在 clientCode=yjiyuncom + cluster=test 下，与 yjiyuncom.test.json / yjiyuncom.multistage.json / yjiyuncom.guyu.json 同作用域，这里是第四条。不带 runtimeAgentId 时精确匹配仍取索引里第一条 yjiyuncom.test.json，要跑本蓝图必须带 runtimeAgentId=yjiyuncom_guyu_single_agent，或在工作台里按 selectionId 选。这里的 cluster 必须与 index.json 里该条目一字不差，否则 AgentBlueprintValidator 按 cluster mismatch 直接报 error。",
+  "_模式差异说明": "single_agent 走 CustomerServiceOrchestratorAgent 的单阶段分支：一次模型调用直接产出对客回复，前后各挂一段确定性的读取与写回。multi_stage 走 handleMultiStage，把恢复确认、意图识别、业务处理拆成三次模型调用，每次有独立 outputContract，规则结论在阶段之间传递。因此本蓝图里模型承担的判断更多、可观测的中间结论更少——这正是要对比的东西。",
+  "_规则差异说明": "单阶段分支里只有 recovery-detection 一个 Rule 有调用点（orchestration:rule.recovery.evaluate）。另外六条的调用点（rule.intent.priority / rule.profile.gate / rule.handoff.trigger / rule.queue.version / rule.closure.required_fields）全部位于 handleMultiStage 内部，单阶段这条链根本不会走到。注意 RuleCapabilityCatalog 是模式无关的：这六条都在 WIRED_RULES 里，声明 enabled=true 不会得到任何 warning，却也不会被调用——这是本工程当前校验能力的一个盲区。所以这里刻意写成 enabled=false，让它们投影成 disabledRuleCodes 在时间线上显形，而不是声明成 true 装出一份不存在的保证。代价是语义借用：enabled=false 本意是「租户主动关闭」，这里表达的是「本模式无调用点」。",
+  "_工具差异说明": "allow 只列单阶段分支真正会调用的六个编排 Tool，加三个模型可动态调用的 Tool。相比 multi_stage 版少三个：getRuleContext 的调用点在 handleMultiStage 里；mergeCustomerProfile / createDiagnosis 属 IMPLEMENTED_BUT_UNWIRED_TOOLS，两种模式都没有调用点。多出来的 load_skill_through_path 是本模式的关键——multi_stage 靠 stages[].skills 把技能钉死在阶段上，single_agent 没有阶段，只能靠模型按 SKILL.md 的 description 自己判断该加载哪个。另一个新增点是 retrieveKnowledgeBase：本蓝图要求产品事实、用法、会员规则、售后政策等信息先经账号级知识库检索后再答复。",
+  "blueprintId": "yjiyuncom_guyu_single_v1",
+  "version": 1,
+  "clientCode": "yjiyuncom",
+  "cluster": "test",
+  "runtimeAgentId": "yjiyuncom_guyu_single_agent",
+  "meta": {
+    "industry": "美妆护肤-guyu",
+    "scenarios": ["BEAUTY_SKINCARE"],
+    "generatedBy": "coze-workflow-extract:guyudefinal_dev_0725_31/single-agent-variant",
+    "runId": "guyu-asset-extract-single-v1"
+  },
+  "runtimeMode": "single_agent",
+  "prompt": {
+    "_说明": "single_agent 与 multi_stage 共用同一份 SOUL.md，只把模式相关的工作准则单独拆到 AGENTS.single.md。这样后续若只改人设文风，两种模式自动同步；若只改单阶段纪律，也不会误伤多阶段。",
+    "soulMdRef": "prompts/blueprints/guyu/SOUL.md",
+    "agentsMdRef": "prompts/blueprints/guyu/AGENTS.single.md",
+    "knowledgeMd": "（本工程走百炼知识库检索，knowledgeMd 不参与提示词投影。四个数据集的内容边界待人工确认，见设计文档 §7。）"
+  },
+  "skills": [
+    {
+      "_说明": "与 multi_stage 版完全相同的 10 个 library Skill，名字与顺序都不改，这样对比时技能正文不构成变量。但生效方式不同：multi_stage 由 stages[].skills 把技能钉在阶段上，本模式下 10 个全部投影进 workspace，由模型按各 SKILL.md 的 description 自行判断加载哪个——技能选择从确定性编排变成了模型裁量，这是两种模式最主要的行为差异之一。",
+      "name": "recommendation-consulting",
+      "source": "library",
+      "ref": "skills/recommendation-consulting",
+      "skillMd": null
+    },
+    {
+      "name": "product-usage-qa",
+      "source": "library",
+      "ref": "skills/product-usage-qa",
+      "skillMd": null
+    },
+    {
+      "name": "after-sales-return",
+      "source": "library",
+      "ref": "skills/after-sales-return",
+      "skillMd": null
+    },
+    {
+      "name": "allergy-triage",
+      "source": "library",
+      "ref": "skills/allergy-triage",
+      "skillMd": null
+    },
+    {
+      "name": "membership-benefits",
+      "source": "library",
+      "ref": "skills/membership-benefits",
+      "skillMd": null
+    },
+    {
+      "name": "package-card",
+      "source": "library",
+      "ref": "skills/package-card",
+      "skillMd": null
+    },
+    {
+      "name": "daily-and-fallback",
+      "source": "library",
+      "ref": "skills/daily-and-fallback",
+      "skillMd": null
+    },
+    {
+      "_说明": "reply-humanizer 在 multi_stage 里挂在 business_process 阶段上，出口润色是编排保证的。本模式下它只是可选技能之一，能否生效取决于模型是否真的加载并自查——所以 agentsMd 的「技能」一节把它写成了硬要求。这一条是对比时要重点看的：单阶段模式下 AI 味与空话结尾是否明显更多。",
+      "name": "reply-humanizer",
+      "source": "library",
+      "ref": "skills/reply-humanizer",
+      "skillMd": null
+    },
+    {
+      "name": "recovery-handling",
+      "source": "library",
+      "ref": "skills/recovery-handling",
+      "skillMd": null
+    },
+    {
+      "name": "human-handoff",
+      "source": "library",
+      "ref": "skills/human-handoff",
+      "skillMd": null
+    }
+  ],
+  "rules": [
+    {
+      "_说明": "本模式下唯一真正生效的 Rule，调用点在单阶段分支的 orchestration:rule.recovery.evaluate。词表与 multi_stage 版逐字一致，保证「续接判定」这一项在两种模式下行为相同，不构成对比变量。",
+      "ruleCode": "recovery-detection",
+      "enabled": true,
+      "params": {
+        "continuationKeywords": [
+          "继续",
+          "继续说",
+          "刚才",
+          "接着",
+          "上次",
+          "前面",
+          "上次那套",
+          "之前推荐的",
+          "刚说的那个",
+          "就这个",
+          "还是那个"
+        ]
+      }
+    },
+    {
+      "_说明": "以下六条一律 enabled=false，原因见文件头 _规则差异说明：它们的调用点都在 handleMultiStage 内部，单阶段分支不会走到。写成 false 是为了在时间线的 disabledRuleCodes 里显形；写成 true 同样 0 warning，却会装出一份根本不存在的确定性保证。intent-priority 的九码优先级表在本模式下改由 agentsMd 下发给模型自己执行。",
+      "ruleCode": "intent-priority",
+      "enabled": false,
+      "params": {}
+    },
+    {
+      "_说明": "画像充分度与追问轮次上限在本模式下没有确定性闸门，改由 agentsMd 的「追问纪律」交给模型自我节制。对比时重点看：单阶段模式会不会追问超过三轮、或在客户已说「直接推荐」后仍继续追问。",
+      "ruleCode": "profile-completeness",
+      "enabled": false,
+      "params": {}
+    },
+    {
+      "ruleCode": "follow-up-round-limit",
+      "enabled": false,
+      "params": {}
+    },
+    {
+      "_说明": "转人工硬触发在本模式下完全由模型判断（agentsMd「转人工纪律」）。单阶段分支构造历史摘要写回请求时，needHumanHandoff 参数固定传 false，所以即使模型在回复里做了交接，写回记录也不会带上交接标记——这是本模式一处真实的信息损失，对比时应当作为结论之一记录。",
+      "ruleCode": "human-handoff-trigger",
+      "enabled": false,
+      "params": {}
+    },
+    {
+      "_说明": "任务板乐观锁与收口必填项校验都在 result_close 阶段，本模式没有这个阶段。单阶段分支的 tool.queue.sync 直接拿前置读到的 queueVersion 写回，不做冲突重读；tool.history.save 也不校验摘要是否为空。并发写同一会话时本模式更容易发生覆盖，这一点在对比压测里应当单独验证。",
+      "ruleCode": "queue-version-guard",
+      "enabled": false,
+      "params": {}
+    },
+    {
+      "ruleCode": "closure-writeback-required-fields",
+      "enabled": false,
+      "params": {}
+    }
+  ],
+  "tools": {
+    "_说明": "allow 里前六个是单阶段分支固定调用的编排 Tool，与时间线上的 tool.session.ensure / tool.history.load / tool.queue.load / tool.profile.load / tool.history.save / tool.queue.sync 一一对应。后面三个是注册进 Toolkit、模型可动态调用的 Tool：memory_search / load_skill_through_path / retrieveKnowledgeBase。详见文件头 _工具差异说明。",
+    "allow": [
+      "createOrResumeSession",
+      "getHistorySummary",
+      "getCustomerProfile",
+      "getIntentQueue",
+      "saveHistorySummary",
+      "syncIntentQueue",
+      "memory_search",
+      "load_skill_through_path",
+      "retrieveKnowledgeBase"
+    ],
+    "deny": ["execute", "write_file", "read_file"],
+    "mcpServers": []
+  },
+  "runtime": {
+    "model": "deepseek-v4-flash",
+    "isolationScope": "USER",
+    "maxContextTokens": 32000
+  },
+  "_无stages说明": "single_agent 刻意不写 stages[]。AgentBlueprintValidator.validateRuntimeMode 只在 isMultiStage() 为真时才校验 stages[]，写了也会被静默忽略——留一份不生效的阶段定义在这里，下一个人会以为它在起作用。"
+}

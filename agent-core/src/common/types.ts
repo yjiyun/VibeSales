@@ -358,6 +358,7 @@ export type ArtifactKind =
   | 'flow_yaml'
   | 'flow_check'
   | 'blueprint'
+  | 'blueprint_draft'
   | 'blueprint_check'
   | 'expert_dispatch'
   | 'expert_result'
@@ -403,6 +404,16 @@ export interface SkillDefinition {
   requiredTools?: string[];
 }
 
+/**
+ * 确定性规则声明。只做开关与参数覆盖，不下发表达式。
+ * 词表与 Java `RuleCapabilityCatalog` 对齐；可缺省（runtime 走 Java 默认）。
+ */
+export interface RuleSpec {
+  ruleCode: string;
+  enabled?: boolean;
+  params?: Record<string, unknown>;
+}
+
 export interface AgentBlueprint {
   blueprintId: string;
   version: number;
@@ -411,6 +422,7 @@ export interface AgentBlueprint {
   meta: { industry?: string; scenarios: string[]; generatedBy: string; runId: string };
   prompt: { agentsMd: string; soulMd: string; knowledgeMd?: string };
   skills: SkillDefinition[];
+  rules?: RuleSpec[];
   tools: {
     allow: string[];
     deny: string[];

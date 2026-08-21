@@ -145,10 +145,10 @@ services:
       RUNTIME_PORT: "8088"
       RUNTIME_AUTH_TOKEN: ${RUNTIME_AUTH_TOKEN:?required}
       RUNTIME_ADMIN_TOKEN: ${RUNTIME_ADMIN_TOKEN:?required}
-      RUNTIME_MODEL: ${RUNTIME_MODEL:-dashscope:deepseek-v4-flash-0731}
+      RUNTIME_MODEL: ${RUNTIME_MODEL:-dashscope:deepseek-v4-flash}
       RUNTIME_LLM_BASE_URL: http://higress:8080/v1
       RUNTIME_LLM_TOKEN: ${HIGRESS_CONSUMER_TOKEN:?required}
-      AGENT_MODEL_NAME: ${QWEN_MODEL:-deepseek-v4-flash-0731}
+      AGENT_MODEL_NAME: ${QWEN_MODEL:-deepseek-v4-flash}
       AGENT_MODEL_BASE_URL: http://higress:8080/v1
       AGENT_MODEL_API_KEY: ${HIGRESS_CONSUMER_TOKEN:?required}
       AGENTSCOPE_WORKSPACE: /app/workspace
@@ -214,7 +214,7 @@ services:
       QWEN_BASE_URL: http://higress:8080/v1
       DASHSCOPE_API_KEY: ${HIGRESS_CONSUMER_TOKEN:?required}
       QWEN_GATEWAY_TOKEN: ${HIGRESS_CONSUMER_TOKEN:?required}
-      QWEN_MODEL: ${QWEN_MODEL:-deepseek-v4-flash-0731}
+      QWEN_MODEL: ${QWEN_MODEL:-deepseek-v4-flash}
       WEB_AUTH_TOKEN: ${WEB_AUTH_TOKEN:?required}
       WEB_AUTH_CLIENT_CODE: ${WEB_AUTH_CLIENT_CODE:?required}
       WEB_AUTH_CREDENTIALS: ${WEB_AUTH_CREDENTIALS:-}
@@ -275,7 +275,7 @@ services:
       QWEN_BASE_URL: http://higress:8080/v1
       DASHSCOPE_API_KEY: ${HIGRESS_CONSUMER_TOKEN:?required}
       QWEN_GATEWAY_TOKEN: ${HIGRESS_CONSUMER_TOKEN:?required}
-      QWEN_MODEL: ${QWEN_MODEL:-deepseek-v4-flash-0731}
+      QWEN_MODEL: ${QWEN_MODEL:-deepseek-v4-flash}
       ARTIFACT_INSPECTOR: on
       LOG_STDERR: ${LOG_STDERR:-on}
       LOG_FILE: "off"

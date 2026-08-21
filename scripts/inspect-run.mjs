@@ -40,6 +40,17 @@ function expertRole(item) {
   return item?.payload?.role ?? item?.written_by ?? 'expert';
 }
 
+function formatRules(rules) {
+  if (!Array.isArray(rules) || !rules.length) return '—';
+  return rules
+    .map((rule) => {
+      const code = rule?.ruleCode || '(missing)';
+      const on = rule?.enabled === false ? 'off' : 'on';
+      return `${code} (${on})`;
+    })
+    .join(', ');
+}
+
 export function summarizeStore(store, runId) {
   const runs = store.runs ?? [];
   const run =
@@ -109,6 +120,9 @@ export function formatText(summary) {
     '',
     '--- skills ---',
     (bp?.skills ?? []).map((item) => item.name).join(', ') || '—',
+    '',
+    '--- rules ---',
+    formatRules(bp?.rules),
   ];
   return lines.join('\n');
 }
@@ -174,8 +188,9 @@ export function formatHtml(summary) {
   <pre>id=${escapeHtml(bp?.blueprintId)}
 status=${escapeHtml(summary.blueprintStatus)}
 runtimeAgentId=${escapeHtml(bp?.runtimeAgentId)}
-skills=${escapeHtml((bp?.skills ?? []).map((item) => item.name).join(', '))}</pre>
-  <h2>13 项自检</h2>
+skills=${escapeHtml((bp?.skills ?? []).map((item) => item.name).join(', '))}
+rules=${escapeHtml(formatRules(bp?.rules))}</pre>
+  <h2>14 项自检</h2>
   <ul>${checks || '<li>无</li>'}</ul>
   <h2>绑定</h2>
   <pre>${escapeHtml(JSON.stringify(summary.binding, null, 2) || '—')}</pre>

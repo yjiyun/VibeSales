@@ -212,6 +212,81 @@ class ChatRunManagerTest {
         assertEquals("yjiyuncom_multistage_v1", manager.listRecent(10).get(0).blueprintId());
     }
 
+    /**
+     * 首尾两个节点必须能在前端「输入 / 输出」两栏里读到东西。前端读的是 {@code detail.input} /
+     * {@code detail.output} 这两个专用键，只放平铺字段（先前 run.created 只有 createdAt、run.complete
+     * 只有 reply 等）两栏会直接显示"无"——整条时间线的第一个和最后一个节点看不到客户问了什么、
+     * 机器人答了什么。
+     *
+     * <p>另外 messages 数组不能为空：空数组会让前端回退去 JSON.stringify 整个 bundle，
+     * 面板上变成一行 {@code {"messages": []}}，比键不存在更糟。
+     */
+    @Test
+    void shouldExposeInputAndOutputPanelsOnFirstAndLastNode() {
+        ChatRunManager manager = new ChatRunManager();
+        ChatRunManager.ChatRunState runState =
+                manager.createRun(
+                        new ChatRunStore.RunCreate(
+                                "run-io-1",
+                                Instant.parse("2026-08-20T12:00:00Z"),
+                                "yjiyuncom",
+                                "test",
+                                "BEAUTY_SKINCARE",
+                                "BEAUTY_SKINCARE",
+                                "conv-1",
+                                "user-1",
+                                "这个产品还有货吗？",
+                                "scoped",
+                                "",
+                                "{\"message\":\"这个产品还有货吗？\"}"));
+
+        Map<String, Object> createdInput = mapAt(runState.snapshotEvents().get(0).detail(), "input");
+        assertEquals("这个产品还有货吗？", createdInput.get("messagePreview"));
+        assertEquals("yjiyuncom", createdInput.get("clientCode"));
+
+        manager.completeRun(
+                runState.runId(),
+                new ChatResponse(
+                        "库存充足，随时可以下单。",
+                        "conv-1",
+                        "robot-conv-1",
+                        "user-1",
+                        "robot-key",
+                        "会话名",
+                        "msg-1",
+                        "resume-existing-intent",
+                        "skin-care",
+                        "历史摘要",
+                        "画像摘要",
+                        "queue-v1",
+                        null));
+
+        Map<String, Object> terminalDetail =
+                runState.snapshotEvents().get(runState.snapshotEvents().size() - 1).detail();
+        assertEquals(
+                "这个产品还有货吗？",
+                messagesOf(mapAt(terminalDetail, "input")).get(0).get("text"));
+        assertEquals(
+                "库存充足，随时可以下单。",
+                messagesOf(mapAt(terminalDetail, "output")).get(0).get("text"));
+        assertEquals("queue-v1", mapAt(terminalDetail, "output").get("queueVersion"));
+    }
+
+    @SuppressWarnings("unchecked")
+    private static Map<String, Object> mapAt(Map<String, Object> detail, String key) {
+        Object value = detail.get(key);
+        assertNotNull(value, "缺少 detail." + key + "，前端面板会显示\"无\"");
+        return (Map<String, Object>) value;
+    }
+
+    @SuppressWarnings("unchecked")
+    private static List<Map<String, Object>> messagesOf(Map<String, Object> bundle) {
+        List<Map<String, Object>> messages = (List<Map<String, Object>>) bundle.get("messages");
+        assertNotNull(messages);
+        assertFalse(messages.isEmpty(), "messages 不能为空数组，否则前端会渲染成字面量 {\"messages\": []}");
+        return messages;
+    }
+
     private static final class FakeChatRunStore implements ChatRunStore {
         private final List<RunCreate> createdRuns = new ArrayList<>();
         private final List<ChatRunEvent> events = new ArrayList<>();

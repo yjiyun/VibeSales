@@ -18,7 +18,7 @@ const fsEndpoint='http://agentteams-controller:9000',gateway='http://agentteams-
 const values={...existing,
  AGENTTEAMS_DOCKER_NETWORK:'agentteams-net',
  MINIO_ENDPOINT:fsEndpoint,MINIO_ACCESS_KEY:need(controller,'AGENTTEAMS_MINIO_USER'),MINIO_SECRET_KEY:need(controller,'AGENTTEAMS_MINIO_PASSWORD'),MINIO_BUCKET:need(controller,'AGENTTEAMS_MINIO_BUCKET'),
- RUNTIME_MODEL:'dashscope:deepseek-v4-flash-0731',NEST_LLM_BASE_URL:gateway+'/v1',NEST_LLM_TOKEN:gatewayKey,RUNTIME_LLM_BASE_URL:gateway+'/v1',RUNTIME_LLM_TOKEN:gatewayKey,
+ RUNTIME_MODEL:'dashscope:deepseek-v4-flash',NEST_LLM_BASE_URL:gateway+'/v1',NEST_LLM_TOKEN:gatewayKey,RUNTIME_LLM_BASE_URL:gateway+'/v1',RUNTIME_LLM_TOKEN:gatewayKey,
  RUNTIME_MCP_URL:gateway+'/mcp-servers/chatflows-p3c',RUNTIME_MCP_TOKEN:gatewayKey,ORCHESTRATOR_LLM:'off',ORCHESTRATOR_LLM_BASE_URL:gateway+'/v1',
  FLOW_PLATFORM_MODE:'local',ORCHESTRATION_MODE:'platform',AGENT_MANAGER_HOST_PORT:'18090',
  AGENTTEAMS_CONTROLLER_URL:'http://agentteams-controller:8090',AGENTTEAMS_AUTH_TOKEN:controllerToken,

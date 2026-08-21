@@ -36,9 +36,20 @@ public final class CompositeBlueprintSource implements BlueprintSource {
             String sceneCode,
             String runtimeAgentId,
             String version) {
+        return resolve(clientCode, cluster, sceneCode, runtimeAgentId, version, "");
+    }
+
+    @Override
+    public Optional<BlueprintHandle> resolve(
+            String clientCode,
+            String cluster,
+            String sceneCode,
+            String runtimeAgentId,
+            String version,
+            String userId) {
         try {
             Optional<BlueprintHandle> resolved =
-                    primary.resolve(clientCode, cluster, sceneCode, runtimeAgentId, version);
+                    primary.resolve(clientCode, cluster, sceneCode, runtimeAgentId, version, userId);
             if (resolved.isPresent()) {
                 return resolved;
             }
@@ -47,7 +58,7 @@ public final class CompositeBlueprintSource implements BlueprintSource {
                 throw exception;
             }
         }
-        return fallback.resolve(clientCode, cluster, sceneCode, runtimeAgentId, version);
+        return fallback.resolve(clientCode, cluster, sceneCode, runtimeAgentId, version, userId);
     }
 
     BlueprintSource primary() {

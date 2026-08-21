@@ -67,9 +67,12 @@ services:
       RUNTIME_PORT: "8088"
       RUNTIME_AUTH_TOKEN: ${RUNTIME_AUTH_TOKEN:?required}
       RUNTIME_ADMIN_TOKEN: ${RUNTIME_ADMIN_TOKEN:?required}
-      RUNTIME_MODEL: ${RUNTIME_MODEL:-dashscope:deepseek-v4-flash-0731}
+      RUNTIME_MODEL: ${RUNTIME_MODEL:-dashscope:deepseek-v4-flash}
       RUNTIME_LLM_BASE_URL: ${RUNTIME_LLM_BASE_URL:?required}
       RUNTIME_LLM_TOKEN: ${RUNTIME_LLM_TOKEN:?required}
+      AGENT_MODEL_NAME: ${QWEN_MODEL:-deepseek-v4-flash}
+      AGENT_MODEL_BASE_URL: ${RUNTIME_LLM_BASE_URL:?required}
+      AGENT_MODEL_API_KEY: ${RUNTIME_LLM_TOKEN:?required}
       AGENTSCOPE_WORKSPACE: /app/workspace
       DATABASE_URL: jdbc:postgresql://postgres:5432/chatflows
       DATABASE_USER: agent_runtime_login
@@ -92,6 +95,17 @@ services:
       AGENTLOOP_ENDPOINT: ${AGENTLOOP_ENDPOINT:-}
       AGENTLOOP_ACCESS_KEY: ${AGENTLOOP_ACCESS_KEY:-}
       AGENTLOOP_ACCESS_SECRET: ${AGENTLOOP_ACCESS_SECRET:-}
+      AISTIO_CONTROL_PLANE_HTTP: ${AISTIO_CONTROL_PLANE_HTTP:-http://host.docker.internal:28081}
+      AISTIO_CONTROL_HTTP: ${AISTIO_CONTROL_HTTP:-http://host.docker.internal:28081}
+      BUILDER_INTERNAL_TOKEN: ${BUILDER_INTERNAL_TOKEN:-local-dev-internal-token-at-least-32chars}
+      AISTIO_AGENT_NAME: ${AISTIO_AGENT_NAME:-chatflows-agent-runtime}
+      AISTIO_NAMESPACE: ${AISTIO_NAMESPACE:-chatflows}
+      AISTIO_CONTRACT_HTTP_PORT: "28191"
+      AISTIO_PUBLIC_BASE_URL: ${AISTIO_PUBLIC_BASE_URL:-http://127.0.0.1:28191}
+    extra_hosts:
+      - "host.docker.internal:host-gateway"
+    ports:
+      - "127.0.0.1:28191:28191"
     depends_on:
       db-init: { condition: service_completed_successfully }
       redis: { condition: service_healthy }
@@ -105,6 +119,10 @@ services:
     environment:
       WEB_HOST: 0.0.0.0
       WEB_PORT: "3100"
+      # manager 的 CHATFLOWS_NEST_URL 打的是本进程，不是 BFF。缺这个会默认 local，
+      # 向导「确认发布」会在 Nest 里直接跑完 P4，Worker 再带 proof import 就
+      # approval credential mismatch or already consumed（c9e3ad3f 等同型事故）。
+      ORCHESTRATION_MODE: ${ORCHESTRATION_MODE:-platform}
       ARTIFACT_INSPECTOR: ${ARTIFACT_INSPECTOR:-on}
       ARTIFACT_STORE: postgres
       DATABASE_URL: postgresql://chatflows_app_login:${CHATFLOWS_APP_DB_PASSWORD:?required}@postgres:5432/chatflows
@@ -128,7 +146,7 @@ services:
       P3C_BUSINESS_MCP_URL: ${RUNTIME_MCP_URL:?required}
       QWEN_BASE_URL: ${NEST_LLM_BASE_URL:?required}
       QWEN_GATEWAY_TOKEN: ${NEST_LLM_TOKEN:?required}
-      QWEN_MODEL: ${QWEN_MODEL:-deepseek-v4-flash-0731}
+      QWEN_MODEL: ${QWEN_MODEL:-deepseek-v4-flash}
       AGENTLOOP_EXPORTER: ${AGENTLOOP_EXPORTER:-off}
       AGENTLOOP_SAMPLE_RATE: ${AGENTLOOP_SAMPLE_RATE:-1.0}
       AGENTLOOP_PROTOCOL: ${AGENTLOOP_PROTOCOL:-otlp}
@@ -191,7 +209,7 @@ services:
       P3C_BUSINESS_MCP_URL: ${RUNTIME_MCP_URL:?required}
       QWEN_BASE_URL: ${NEST_LLM_BASE_URL:?required}
       QWEN_GATEWAY_TOKEN: ${NEST_LLM_TOKEN:?required}
-      QWEN_MODEL: ${QWEN_MODEL:-deepseek-v4-flash-0731}
+      QWEN_MODEL: ${QWEN_MODEL:-deepseek-v4-flash}
       LOG_STDERR: ${LOG_STDERR:-on}
       LOG_FILE: "off"
     depends_on:
@@ -272,7 +290,7 @@ services:
       CHATFLOWS_NEST_URL: http://agent-core:3100
       PIPELINE_CONTROL_TOKEN: ${PIPELINE_CONTROL_TOKEN:?required}
       ORCHESTRATOR_LLM: ${ORCHESTRATOR_LLM:-off}
-      ORCHESTRATOR_MODEL: ${ORCHESTRATOR_MODEL:-dashscope:deepseek-v4-flash-0731}
+      ORCHESTRATOR_MODEL: ${ORCHESTRATOR_MODEL:-dashscope:deepseek-v4-flash}
       ORCHESTRATOR_LLM_BASE_URL: ${ORCHESTRATOR_LLM_BASE_URL:-}
       HIGRESS_CONSUMER_TOKEN: ${HIGRESS_CONSUMER_TOKEN:-}
       ORCHESTRATOR_STATE_HOME: /data/orchestrator-state

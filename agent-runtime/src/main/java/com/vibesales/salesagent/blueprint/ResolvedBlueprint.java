@@ -20,6 +20,8 @@ public record ResolvedBlueprint(
         String matchLevel,
         String sourceType,
         String sourcePath,
+        String agentsMd,
+        String soulMd,
         String systemPrompt,
         BlueprintSkillProjector.Projection skills,
         BlueprintRuleProjector.Projection rules,
@@ -94,6 +96,8 @@ public record ResolvedBlueprint(
         detail.put("sourceType", sourceType);
         detail.put("rules", rules.toTimelineDetail());
         detail.put("recoveryKeywordSource", rules.recoveryKeywordSource());
+        detail.put("intentKeywordSource", rules.intentKeywordSource());
+        detail.put("profileThresholdSource", rules.profileThresholdSource());
         // 以下是补充信息，看不全也不影响判断"配的东西有没有生效"
         detail.put("version", version());
         detail.put("requestedClientCode", requestedClientCode);

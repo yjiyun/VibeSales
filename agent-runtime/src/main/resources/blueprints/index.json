@@ -15,6 +15,18 @@
       "path": "blueprints/yjiyuncom.multistage.json"
     },
     {
+      "_说明": "谷雨美肤师真实资产蓝图：从 Coze 工作流 guyudefinal_dev_0725_31 提取，10 个 library Skill + 7 条 Rule + 5 stage。cluster 固定 test：测试集群只有这一个，测试阶段账号固定 clientCode=yjiyuncom，另开一个 cluster 只会让工作台默认选不到它。代价是这里出现三条同作用域条目（test / multistage / guyu）：只按 clientCode+cluster 精确匹配时命中的是列表里第一条 yjiyuncom.test.json，要选中本蓝图必须带 runtimeAgentId=yjiyuncom_guyu_agent，或在工作台里按 selectionId 选。",
+      "clientCode": "yjiyuncom",
+      "cluster": "test",
+      "path": "blueprints/yjiyuncom.guyu.json"
+    },
+    {
+      "_说明": "谷雨真实资产的 single_agent 版本，与上一条 multi_stage 版业务资产同源（同一份 soulMd、同 10 个 library Skill、同一套 runtime），只为对比两种 runtimeMode 的运行效果而存在。同作用域第四条，同样命中不到默认精确匹配，必须带 runtimeAgentId=yjiyuncom_guyu_single_agent 或在工作台里按 selectionId 选。",
+      "clientCode": "yjiyuncom",
+      "cluster": "test",
+      "path": "blueprints/yjiyuncom.guyu.single.json"
+    },
+    {
       "_说明": "同租户默认蓝图，承担两种降级：不带 cluster（tenant_default）与带了没有专属蓝图的 cluster（cluster_fallback）。",
       "clientCode": "yjiyuncom",
       "cluster": "",

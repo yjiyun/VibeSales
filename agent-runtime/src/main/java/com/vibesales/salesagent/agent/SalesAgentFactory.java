@@ -1,6 +1,8 @@
-package com.agentteams.salesagent.agent;
+package com.vibesales.salesagent.agent;
 
-import com.agentteams.salesagent.agent.middleware.RecoveryPromptContextMiddleware;
+import com.vibesales.salesagent.agent.middleware.LlmTraceMiddleware;
+import com.vibesales.salesagent.agent.middleware.KnowledgePromptContextMiddleware;
+import com.vibesales.salesagent.agent.middleware.RecoveryPromptContextMiddleware;
 import io.agentscope.core.model.Model;
 import io.agentscope.core.state.InMemoryAgentStateStore;
 import io.agentscope.harness.agent.HarnessAgent;
@@ -31,8 +33,12 @@ public final class SalesAgentFactory {
     /**
      * @param workspaceRoot 租户命名空间目录的父目录，必须与 {@code TenantWorkspaceProjector} 用的是
      *     同一个路径，否则 Agent 读的目录和投影写的目录对不上
+     * @param llmTraceMiddleware LLM 输入输出埋点中间件。由调用方持有同一个实例：中间件负责在
+     *     {@code onModelCall} 采集快照，编排层的时间线累加器再按 {@code replyId} 取走，因此不能在
+     *     这里自己 new 一个
      */
-    public HarnessAgent createSharedAgent(Model model, Path workspaceRoot) {
+    public HarnessAgent createSharedAgent(
+            Model model, Path workspaceRoot, LlmTraceMiddleware llmTraceMiddleware) {
         return HarnessAgent.builder()
                 .name(DEFAULT_AGENT_NAME)
                 .agentId(DEFAULT_AGENT_NAME)
@@ -47,6 +53,12 @@ public final class SalesAgentFactory {
                 // 动态恢复上下文由编排层先写入 RuntimeContext，再在 onSystemPrompt(...) 阶段
                 // 统一注入系统提示词，避免把内部判断结果伪装成客户原话污染 USER 历史。
                 .middleware(new RecoveryPromptContextMiddleware())
+                // 租户知识库配置同样走 RuntimeContext 注入：这里只追加"当前账号有哪些知识库可检索"
+                // 与"什么场景必须先检索"的运行时说明，不在 Middleware 里自行做外部查询。
+                .middleware(new KnowledgePromptContextMiddleware())
+                // 执行时间线的 LLM 节点要展示本次调用真实的提示词/输入/输出，只有 onModelCall 这一层
+                // 能同时拿到"发给模型的 messages"和"带 replyId 的事件流"。详见 LlmTraceMiddleware 类注释。
+                .middleware(llmTraceMiddleware)
                 // 显式切到内存态 state store，绕开默认文件落盘链路对自定义上下文对象的
                 // 序列化限制，保证本地联调页与可视化链路先可用。
                 .stateStore(new InMemoryAgentStateStore())

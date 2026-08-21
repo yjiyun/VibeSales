@@ -10,6 +10,7 @@
     "wizard": "ts-node -r dotenv/config src/main.ts p1-wizard",
     "test:p1": "node scripts/test-p1.js",
     "test:p3c-signals": "ts-node -r dotenv/config scripts/test-p3c-signals.ts",
+    "test:p3c-rules": "ts-node -r dotenv/config scripts/test-p3c-rules.ts",
     "test:agentteams": "ts-node -r dotenv/config scripts/test-agentteams-e2e.ts",
     "test:p3c-industries": "ts-node -r dotenv/config scripts/export-p3c-industry-smokes.ts",
     "test:mcp": "ts-node -r dotenv/config scripts/test-mcp-contract.ts",

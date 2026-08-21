@@ -64,7 +64,12 @@ public record AgentBlueprint(
     }
 
     @JsonIgnoreProperties(ignoreUnknown = true)
-    public record Prompt(String agentsMd, String soulMd, String knowledgeMd) {}
+    public record Prompt(
+            String agentsMd,
+            String agentsMdRef,
+            String soulMd,
+            String soulMdRef,
+            String knowledgeMd) {}
 
     /**
      * 单个 Skill 声明。
@@ -150,7 +155,7 @@ public record AgentBlueprint(
     }
 
     public Prompt promptOrEmpty() {
-        return prompt == null ? new Prompt("", "", "") : prompt;
+        return prompt == null ? new Prompt("", "", "", "", "") : prompt;
     }
 
     public Tools toolsOrEmpty() {

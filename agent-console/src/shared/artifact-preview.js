@@ -60,6 +60,7 @@ export function previewText(item) {
       `blueprintId: ${payload.blueprintId ?? '—'}`,
       `runtimeAgentId: ${payload.runtimeAgentId ?? '—'}`,
       `skills: ${(payload.skills ?? []).map((s) => s.name).filter(Boolean).join(', ') || '—'}`,
+      `rules: ${formatRules(payload.rules)}`,
       '',
       payload.prompt?.soulMd || '',
     ].join('\n');
@@ -77,6 +78,17 @@ export function previewText(item) {
   } catch {
     return String(payload);
   }
+}
+
+export function formatRules(rules) {
+  if (!Array.isArray(rules) || !rules.length) return '—';
+  return rules
+    .map((rule) => {
+      const code = rule?.ruleCode || '(missing)';
+      const on = rule?.enabled === false ? 'off' : 'on';
+      return `${code} (${on})`;
+    })
+    .join(', ');
 }
 
 export const STAGES = [

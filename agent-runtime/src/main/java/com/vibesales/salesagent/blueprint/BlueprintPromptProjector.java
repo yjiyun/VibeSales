@@ -12,18 +12,27 @@ package com.agentteams.salesagent.blueprint;
  */
 public final class BlueprintPromptProjector {
 
-    public String project(AgentBlueprint blueprint) {
+    private final BlueprintPromptAssets promptAssets = new BlueprintPromptAssets();
+
+    public Projection projectPrompt(AgentBlueprint blueprint) {
         AgentBlueprint.Prompt prompt = blueprint.promptOrEmpty();
+        String soulMd = resolveSection(prompt.soulMd(), prompt.soulMdRef(), "prompt.soulMdRef");
+        String agentsMd =
+                resolveSection(prompt.agentsMd(), prompt.agentsMdRef(), "prompt.agentsMdRef");
         StringBuilder builder = new StringBuilder();
-        appendSection(builder, prompt.soulMd());
-        appendSection(builder, prompt.agentsMd());
+        appendSection(builder, soulMd);
+        appendSection(builder, agentsMd);
         if (builder.length() == 0) {
             throw new IllegalStateException(
                     "blueprint "
                             + blueprint.blueprintId()
-                            + " projects an empty system prompt; prompt.agentsMd is required");
+                            + " projects an empty system prompt; prompt.agentsMd or prompt.agentsMdRef is required");
         }
-        return builder.toString().trim();
+        return new Projection(agentsMd, soulMd, builder.toString().trim());
+    }
+
+    public String project(AgentBlueprint blueprint) {
+        return projectPrompt(blueprint).systemPrompt();
     }
 
     private static void appendSection(StringBuilder builder, String section) {
@@ -35,4 +44,16 @@ public final class BlueprintPromptProjector {
         }
         builder.append(section.trim());
     }
+
+    private String resolveSection(String inlineText, String ref, String fieldName) {
+        if (inlineText != null && !inlineText.isBlank()) {
+            return inlineText.trim();
+        }
+        if (ref != null && !ref.isBlank()) {
+            return promptAssets.loadRequired(ref, fieldName);
+        }
+        return "";
+    }
+
+    public record Projection(String agentsMd, String soulMd, String systemPrompt) {}
 }

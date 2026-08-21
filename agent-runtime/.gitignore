@@ -3,6 +3,7 @@
 # 避免把临时文件和敏感配置提交到仓库。
 target/
 .agentscope/
+.agentscope-m2/
 .env
 .env.*
 .DS_Store

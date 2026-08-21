@@ -202,7 +202,7 @@ try {
   const welcomeExpect = step('welcome')?.expect ?? {};
   const modelSelect = page.locator('.wz-model-select');
   await modelSelect.waitFor();
-  await modelSelect.getByText(welcomeExpect.default_model ?? 'deepseek-v4-flash-0731').waitFor();
+  await modelSelect.getByText(welcomeExpect.default_model ?? 'deepseek-v4-flash').waitFor();
   await page.locator('.wz-start__form').getByRole('button', { name: '开始' }).click();
 
   const chatOnly = process.env.CONSOLE_P3C_CHAT_ONLY === '1';

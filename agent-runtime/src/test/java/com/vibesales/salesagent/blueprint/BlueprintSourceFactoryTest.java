@@ -64,6 +64,10 @@ class BlueprintSourceFactoryTest {
                 "",
                 "",
                 "agent_conversations",
+                // chatRunJdbcUrl / Username / Password：留空表示不启用运行留痕落库
+                "",
+                "",
+                "",
                 "agent_chat_runs",
                 "agent_chat_run_events",
                 "http://localhost:3002",
@@ -88,6 +92,7 @@ class BlueprintSourceFactoryTest {
                 ".agentscope/workspace",
                 "sales-customer-agent",
                 false,
+                "",
                 "",
                 false,
                 "",

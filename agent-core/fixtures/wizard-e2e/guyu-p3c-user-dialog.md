@@ -23,7 +23,7 @@
 ### 0. 欢迎屏
 
 1. 打开 VibeSales Harness「搭建向导」
-2. **核对右上角模型下拉**：默认 `deepseek-v4-flash-0731`；可选项还有 `qwen3.8-max`、`qwen3.7-plus`、`deepseek-v4-pro`（本脚本不改，开始后下拉会锁住）
+2. **核对右上角模型下拉**：默认 `deepseek-v4-flash`；可选项还有 `qwen3.8-max`、`qwen3.7-plus`、`deepseek-v4-pro`（本脚本不改，开始后下拉会锁住）
 3. **关闭**「LLM 接待员」（保证无 Key 也可确定性跑完；自动化会再拦截 `createSession` 强制 `llm:false`）
 4. 点击「开始」
 

@@ -1,7 +1,10 @@
 import 'reflect-metadata';
 import { NestFactory } from '@nestjs/core';
 import { AppMcpModule } from '../src/app-mcp.module';
+import { ArtifactStoreService } from '../src/artifacts/artifact-store.service';
 import { agentForMcpServer, McpController } from '../src/mcp/mcp.controller';
+import { ApprovalProofService } from '../src/common/approval-proof.service';
+import { ProductPhase } from '../src/common/product-phase';
 import { agentLoopRoaHeaders, toAgentLoopEnvelope } from '../src/common/agentloop-sink';
 import { TraceService } from '../src/common/trace.service';
 import { TraceRecord, TraceSink } from '../src/common/trace-sink';
@@ -9,6 +12,9 @@ import { randomUUID } from 'crypto';
 
 async function main() {
   process.env.MCP_SERVER_TOKEN = 'mcp-contract-token-0123456789';
+  process.env.PIPELINE_APPROVAL_SIGNING_SECRET = 'approval-signing-secret-at-least-32-characters';
+  process.env.ARTIFACT_STORE = 'file';
+  process.env.ARTIFACT_STORE_FILE = '/tmp/mcp-contract-store.json';
   const app = await NestFactory.createApplicationContext(AppMcpModule, { logger: false });
   const controller = app.get(McpController);
   // 捕获所有 trace 记录，验证 MCP 工具内部的二级打点确实上报（controller 的 tool.call/result 之外的阶段内 span）。
@@ -20,7 +26,7 @@ async function main() {
   const auth={authorization:'Bearer '+process.env.MCP_SERVER_TOKEN};
   const expected: Record<string, number> = {
     'chatflows-p1': 3, 'chatflows-p2': 2, 'chatflows-p3': 3,
-    'chatflows-p3b': 2, 'chatflows-p3c': 6, 'chatflows-p4': 3,
+    'chatflows-p3b': 2, 'chatflows-p3c': 7, 'chatflows-p4': 3,
   };
   for (const [server, count] of Object.entries(expected)) {
     if(!['wizard-intent','template-match','template-personalize','flow-generate','blueprint-compose','flow-import-run'].includes(agentForMcpServer(server)))throw new Error(server+' invalid AgentLoop identity');
@@ -63,6 +69,65 @@ async function main() {
   if(!p4Bypass.error?.message.includes('build_path'))throw new Error('P4 MCP import bypassed run state gate');
   const confused:any=await controller.rpc('chatflows-p4',{jsonrpc:'2.0',id:6,method:'tools/call',params:{name:'import',arguments:{runId:randomUUID(),clientCode:'acme',path:'P3B',payload:{},_ctx:{run_id:runId,client_code:'acme'}}}},auth);
   if(!confused.error?.message.includes('runId must match'))throw new Error('MCP accepted mismatched run identity');
+  const store=app.get(ArtifactStoreService),proofs=app.get(ApprovalProofService);
+  const replayRun=randomUUID(),replayApproval=randomUUID();
+  await store.ensureRun(replayRun,'acme');
+  await store.updateRun(replayRun,{status:'SUCCEEDED',current_phase:ProductPhase.P4_IMPORT_RUN,build_path:'P3C'});
+  await store.putArtifact(replayRun,'approval',{approval_id:replayApproval,action:'P4_IMPORT',status:'APPROVED',actor:'@reviewer:local'},'flow-import-run');
+  await store.putArtifact(replayRun,'import_result',{imported:{kind:'blueprint',external_id:'bp_replay',status:'STAGED'},binding:{user_id:'reviewer',client_code:'acme'}},'flow-import-run');
+  await store.putArtifact(replayRun,'dry_run',{ok:true},'flow-import-run');
+  const replayProof=proofs.issue({run_id:replayRun,approval_id:replayApproval,actor:'@reviewer:local',decision:'APPROVE'});
+  const ctx={run_id:replayRun,client_code:'acme'};
+  const replayed:any=await controller.rpc('chatflows-p4',{jsonrpc:'2.0',id:7,method:'tools/call',params:{name:'import',arguments:{runId:replayRun,clientCode:'acme',path:'P3C',approval:{approval_id:replayApproval,decision:'APPROVE',proof:replayProof},_ctx:ctx}}},auth);
+  if(replayed.error||!String(replayed.result?.content?.[0]?.text??'').includes('bp_replay'))throw new Error('P4 import did not replay finished run: '+JSON.stringify(replayed.error??replayed.result));
+  const bound:any=await controller.rpc('chatflows-p4',{jsonrpc:'2.0',id:8,method:'tools/call',params:{name:'bindProject',arguments:{clientCode:'acme',externalId:'bp_replay',path:'P3C',_ctx:ctx}}},auth);
+  if(bound.error||!String(bound.result?.content?.[0]?.text??'').includes('reviewer'))throw new Error('P4 bindProject did not replay finished run: '+JSON.stringify(bound.error??bound.result));
+  const dried:any=await controller.rpc('chatflows-p4',{jsonrpc:'2.0',id:9,method:'tools/call',params:{name:'dryRun',arguments:{path:'P3C',_ctx:ctx}}},auth);
+  if(dried.error||!String(dried.result?.content?.[0]?.text??'').includes('SUCCEEDED'))throw new Error('P4 dryRun did not replay finished run: '+JSON.stringify(dried.error??dried.result));
+  const wrongId:any=await controller.rpc('chatflows-p4',{jsonrpc:'2.0',id:10,method:'tools/call',params:{name:'import',arguments:{runId:replayRun,clientCode:'acme',path:'P3C',approval:{approval_id:randomUUID(),decision:'APPROVE',proof:replayProof},_ctx:ctx}}},auth);
+  if(!wrongId.error?.message.includes('already consumed'))throw new Error('P4 import replay accepted mismatched approval_id');
+
+  // P3C：submitExpertResult → composeBlueprint(runId-only) → selfcheck/persist 省略 blueprint。
+  const p3cRun=randomUUID(),p3cCtx={run_id:p3cRun,client_code:'acme'};
+  await store.ensureRun(p3cRun,'acme');
+  await store.updateRun(p3cRun,{status:'RUNNING',current_phase:ProductPhase.P3C_BLUEPRINT_COMPOSE,build_path:'P3C'});
+  const guidance={role:'customer_success',tone:'专业友好',reply_length:'中等',conditions:['只回答授权知识'],escalation_conditions:['涉及退款']};
+  await store.putArtifact(p3cRun,'triage',triage,'wizard-intent');
+  await store.putArtifact(p3cRun,'guidance',guidance,'template-personalize');
+  const personaByPointer:any=await controller.rpc('chatflows-p3c',{jsonrpc:'2.0',id:18,method:'tools/call',params:{name:'renderPersona',arguments:{guidance:'guidance@v1',_ctx:p3cCtx}}},auth);
+  if(personaByPointer.error||!String(personaByPointer.result?.content?.[0]?.text??'').includes('agentsMd'))throw new Error('renderPersona must accept guidance@v1 pointer: '+JSON.stringify(personaByPointer.error??personaByPointer.result));
+  const personaOmitted:any=await controller.rpc('chatflows-p3c',{jsonrpc:'2.0',id:19,method:'tools/call',params:{name:'renderPersona',arguments:{_ctx:p3cCtx}}},auth);
+  if(personaOmitted.error||!String(personaOmitted.result?.content?.[0]?.text??'').includes('agentsMd'))throw new Error('renderPersona must read stored guidance when omitted: '+JSON.stringify(personaOmitted.error??personaOmitted.result));
+  const personaPayload={agentsMd:'# 工作准则\n你是客服。\n必须遵循：只回答授权知识。\n转人工条件：涉及退款。',soulMd:'# 身份\n以客服身份提供可靠帮助；遇到涉及退款必须转人工，不得自行承诺。'};
+  const businessPayload={scenarios:['beauty_wecom_cs'],conditions:guidance.conditions,escalationConditions:guidance.escalation_conditions};
+  const skillsPayload=[{name:'human-handoff',ref:'skill:human-handoff@1',requiredTools:[]}];
+  const toolsPayload: Array<{name:string;server:string}> = [];
+  for(const[role,payload]of[['persona-expert',personaPayload],['business-expert',businessPayload],['skill-expert',skillsPayload],['tool-expert',toolsPayload]] as const){
+    const submitted:any=await controller.rpc('chatflows-p3c',{jsonrpc:'2.0',id:11,method:'tools/call',params:{name:'submitExpertResult',arguments:{role,payload,_ctx:p3cCtx}}},auth);
+    if(submitted.error||!String(submitted.result?.content?.[0]?.text??'').includes('"submitted":true'))throw new Error('submitExpertResult failed for '+role+': '+JSON.stringify(submitted.error??submitted.result));
+  }
+  const dup:any=await controller.rpc('chatflows-p3c',{jsonrpc:'2.0',id:12,method:'tools/call',params:{name:'submitExpertResult',arguments:{role:'persona-expert',payload:personaPayload,_ctx:p3cCtx}}},auth);
+  if(!dup.error?.message.includes('already submitted'))throw new Error('submitExpertResult must refuse overwrite');
+  const bareRun=randomUUID();
+  await store.ensureRun(bareRun,'acme');
+  await store.updateRun(bareRun,{status:'RUNNING',current_phase:ProductPhase.P3C_BLUEPRINT_COMPOSE,build_path:'P3C'});
+  await store.putArtifact(bareRun,'triage',triage,'wizard-intent');
+  await store.putArtifact(bareRun,'guidance',guidance,'template-personalize');
+  const missingExperts:any=await controller.rpc('chatflows-p3c',{jsonrpc:'2.0',id:14,method:'tools/call',params:{name:'composeBlueprint',arguments:{_ctx:{run_id:bareRun,client_code:'acme'}}}},auth);
+  if(!missingExperts.error?.message.includes('missing:')||!missingExperts.error.message.includes('persona-expert'))throw new Error('composeBlueprint must name missing roles: '+JSON.stringify(missingExperts.error));
+  const composed:any=await controller.rpc('chatflows-p3c',{jsonrpc:'2.0',id:15,method:'tools/call',params:{name:'composeBlueprint',arguments:{_ctx:p3cCtx}}},auth);
+  if(composed.error||!String(composed.result?.content?.[0]?.text??'').includes('blueprintId'))throw new Error('composeBlueprint from submitted experts failed: '+JSON.stringify(composed.error??composed.result));
+  const draft=await store.latestArtifact(p3cRun,'blueprint_draft');
+  if(!draft)throw new Error('composeBlueprint did not stash blueprint_draft');
+  const checked:any=await controller.rpc('chatflows-p3c',{jsonrpc:'2.0',id:16,method:'tools/call',params:{name:'blueprintSelfcheck',arguments:{_ctx:p3cCtx}}},auth);
+  if(checked.error||!String(checked.result?.content?.[0]?.text??'').includes('"ok"'))throw new Error('blueprintSelfcheck without blueprint failed: '+JSON.stringify(checked.error??checked.result));
+  const persisted:any=await controller.rpc('chatflows-p3c',{jsonrpc:'2.0',id:17,method:'tools/call',params:{name:'persistBlueprint',arguments:{runId:p3cRun,_ctx:p3cCtx}}},auth);
+  if(persisted.error)throw new Error('persistBlueprint without blueprint failed: '+JSON.stringify(persisted.error));
+  const bpArt=await store.latestArtifact(p3cRun,'blueprint');
+  if(!bpArt)throw new Error('persistBlueprint did not write blueprint artifact');
+  const p4NoPath:any=await controller.rpc('chatflows-p4',{jsonrpc:'2.0',id:20,method:'tools/call',params:{name:'import',arguments:{runId:replayRun,clientCode:'acme',approval:{approval_id:replayApproval,decision:'APPROVE',proof:replayProof},_ctx:ctx}}},auth);
+  if(p4NoPath.error||!String(p4NoPath.result?.content?.[0]?.text??'').includes('bp_replay'))throw new Error('P4 import must work without path: '+JSON.stringify(p4NoPath.error??p4NoPath.result));
+
   const envelope = toAgentLoopEnvelope({ kind:'step', ts:Date.now(), seq:1, flow:'mcp', requestId:'req-1', scope:'MCP', event:'tool.call', data:{run_id:'run-contract',client_code:'acme',traceparent:'00-0123456789abcdef0123456789abcdef-0123456789abcdef-01'}, deltaMs:0,totalMs:0,level:'info',verboseOnly:false });
   if (envelope.attributes['agentteams.run_id'] !== 'run-contract' || !envelope.traceparent) throw new Error('AgentLoop mapping failed');
   if(envelope.attributes['agentteams.trace.link']!=='traceparent')throw new Error('AgentLoop did not record the trace linkage mode');

@@ -3,6 +3,7 @@ import { createHash, randomUUID } from 'crypto';
 import { ArtifactStoreService } from '../artifacts/artifact-store.service';
 import { AgentBlueprint, CheckItem, CheckReport, Guidance, SkillDefinition, Triage } from '../common/types';
 import { SkillCatalogService } from './skill-catalog.service';
+import { selectWiredRules, validateRuleSpecs } from './rule-catalog';
 
 const BUILTIN_TOOLS = ['read_file', 'memory_search', 'load_skill_through_path'];
 
@@ -12,8 +13,9 @@ export class P3cService {
 
   listSkillCandidates(industry: string | undefined, scenarios: string[]) { return this.skills.list(industry,scenarios); }
 
-  listToolCandidates(clientCode: string) {
-    return [{ name: 'crm_query', server: 'business-tools', visibility: 'tenant', clientCode }];
+  listToolCandidates(_clientCode: string): Array<{ name: string; server: string; visibility: string; clientCode: string }> {
+    // 租户 MCP 注册表尚未实现；返回空列表，compose 只保留三个内置工具。
+    return [];
   }
 
   renderPersona(guidance: Guidance) {
@@ -59,9 +61,14 @@ export class P3cService {
     const candidates = await this.normalizeSkills(input.experts?.skills, input.triage);
     const skills: SkillDefinition[] = candidates.map(s => s.source === 'inline'
       ? { name: s.name, source: 'inline', skillMd: s.skillMd, requiredTools: s.requiredTools ?? [] }
-      : { name: s.name, source: 'library', ref: s.ref, requiredTools: s.requiredTools ?? (s.name === 'human-handoff' ? [] : ['crm_query']) });
+      : { name: s.name, source: 'library', ref: s.ref, requiredTools: s.requiredTools ?? [] });
     const businessRules=this.normalizeBusinessRules(input.experts?.business,input.guidance);
     const {selectedTools,selectedServers}=this.normalizeTools(input.experts?.tools,input.clientCode);
+    // 专家 JSON 里的 rules 一律忽略（A6）。只按 triage 记忆信号或 recovery-handling Skill 装配已接线规则。
+    const rules = selectWiredRules({
+      needsLongTermMemory: input.triage.needs_long_term_memory,
+      skillNames: skills.map((s) => s.name),
+    });
     return {
       blueprintId: 'bp_' + randomUUID().replace(/-/g, ''), version: 0, clientCode: input.clientCode,
       runtimeAgentId: (input.triage.scene_id || 'custom') + '-' + input.clientCode,
@@ -71,7 +78,7 @@ export class P3cService {
       prompt: { agentsMd:String(persona.agentsMd??'')+'\n业务规则：'+businessRules.join('；')
           +'\nGuidance 约束：'+(input.guidance.conditions??[]).join('；')
           +'\nGuidance 转人工条件：'+(input.guidance.escalation_conditions??[]).join('；'),
-        soulMd:String(persona.soulMd??''), knowledgeMd: '# 领域知识\n只使用经租户授权的知识与工具。\n'+businessRules.join('\n') }, skills,
+        soulMd:String(persona.soulMd??''), knowledgeMd: '# 领域知识\n只使用经租户授权的知识与工具。\n'+businessRules.join('\n') }, skills, rules,
       tools: { allow: [...BUILTIN_TOOLS, ...selectedTools], deny: [], mcpServers: selectedServers.map(name=>({ name, url: this.businessMcpUrl(), transport: 'streamableHttp' as const })) },
       runtime: { model: 'dashscope:qwen-plus', isolationScope: 'USER', maxContextTokens: 8000, compaction: { triggerMessages: 50, keepMessages: 20 } },
       guidance: input.guidance,
@@ -168,11 +175,14 @@ export class P3cService {
     return out.length?out:fallback;
   }
 
-  /** tools：接受候选数组、或专家给的 {allow,mcpServers:{name:{...}}} 授权面形状。 */
+  /** tools：只接受 listToolCandidates 返回的租户可见 MCP 工具；注册表中没有的名称丢弃。 */
   private normalizeTools(value:any,clientCode:string):{selectedTools:string[];selectedServers:string[]}{
+    const catalog=this.listToolCandidates(clientCode);
+    const knownTools=new Set(catalog.map(t=>String(t?.name??'')).filter(Boolean));
+    const knownServers=new Set(catalog.map(t=>String(t?.server??'')).filter(Boolean));
     const pick=(candidates:any[]):{selectedTools:string[];selectedServers:string[]}=>({
-      selectedTools:[...new Set(candidates.map(t=>String(t?.name??'')).filter(Boolean))],
-      selectedServers:[...new Set(candidates.map(t=>String(t?.server??'')).filter(Boolean))],
+      selectedTools:[...new Set(candidates.map(t=>String(t?.name??'')).filter(name=>knownTools.has(name)))],
+      selectedServers:[...new Set(candidates.map(t=>String(t?.server??'')).filter(name=>knownServers.has(name)))],
     });
     if(Array.isArray(value))return pick(value);
     if(value&&typeof value==='object'){
@@ -180,14 +190,14 @@ export class P3cService {
       const servers:string[]=value.mcpServers&&typeof value.mcpServers==='object'&&!Array.isArray(value.mcpServers)
         ? Object.keys(value.mcpServers)
         : Array.isArray(value.mcpServers)?value.mcpServers.map((s:any)=>String(s?.name??s)).filter((s:string)=>Boolean(s)):[];
-      // mcpServers 里声明的 tools 也算已授权工具（专家常只在 server 下列，不重复进 allow）
       const nested=value.mcpServers&&typeof value.mcpServers==='object'&&!Array.isArray(value.mcpServers)
         ? Object.values<any>(value.mcpServers).flatMap(s=>Array.isArray(s?.tools)?s.tools.map((t:any)=>String(t)):[]) as string[]
         : [];
-      const tools=[...new Set([...allow,...nested])].filter(Boolean);
-      if(tools.length||servers.length)return {selectedTools:tools,selectedServers:[...new Set(servers)]};
+      const tools=[...new Set([...allow,...nested])].filter(name=>knownTools.has(name));
+      const selectedServers=[...new Set(servers)].filter(name=>knownServers.has(name));
+      if(tools.length||selectedServers.length)return {selectedTools:tools,selectedServers};
     }
-    return pick(this.listToolCandidates(clientCode));
+    return pick(catalog);
   }
 
   private businessMcpUrl(): string {
@@ -199,7 +209,7 @@ export class P3cService {
 
   async blueprintSelfcheck(bp: AgentBlueprint): Promise<CheckReport> {
     const names = bp.skills.map(s => s.name); const deps = bp.skills.flatMap(s => s.requiredTools ?? []);
-    const capability = new Set([...bp.tools.allow, ...bp.tools.mcpServers.map(s => s.name), ...this.listToolCandidates(bp.clientCode).map(t => t.name)]);
+    const capability = new Set([...bp.tools.allow, ...bp.tools.mcpServers.map(s => s.name)]);
     const check = (id:number,name:string,ok:boolean,severity:'error'|'warning'='error',detail?:string):CheckItem => ({id,name,ok,severity,detail});
     const promptAll = bp.prompt.agentsMd + ' ' + bp.prompt.soulMd + ' ' + bp.skills.map(s => s.skillMd ?? '').join(' ');
     const checks: CheckItem[] = [
@@ -216,6 +226,7 @@ export class P3cService {
       check(11, 'MCP 只经受信网关', bp.tools.mcpServers.every(s => this.validGatewayToolUrl(s.url))),
       check(12, '隔离范围合法且固定', ['SESSION','USER','AGENT'].includes(bp.runtime.isolationScope)),
       check(13, '转人工条件已表达', (bp.guidance?.escalation_conditions ?? []).every(c => promptAll.includes(c)), 'warning'),
+      this.checkRules(bp, check),
     ];
     return { ok: checks.every(c => c.ok || c.severity === 'warning'), checks, subject_hash:this.blueprintHash(bp) };
   }
@@ -228,6 +239,20 @@ export class P3cService {
 
   blueprintHash(bp:AgentBlueprint):string{const{version:_,...content}=bp;return createHash('sha256').update(JSON.stringify(this.canonical(content))).digest('hex');}
   private canonical(value:any):any{if(Array.isArray(value))return value.map(item=>this.canonical(item));if(value&&typeof value==='object')return Object.fromEntries(Object.keys(value).sort().map(key=>[key,this.canonical(value[key])]));return value;}
+
+  private checkRules(
+    bp: AgentBlueprint,
+    check: (id:number,name:string,ok:boolean,severity?:'error'|'warning',detail?:string)=>CheckItem,
+  ): CheckItem {
+    // 缺省 / 空数组：按需装配下合法，但留 warning 提示 runtime 会走 Java 默认词表（不挡 persist）。
+    if (!bp.rules?.length) {
+      return check(14, '规则声明合法', false, 'warning', 'empty; runtime uses Java defaults');
+    }
+    const { errors, warnings } = validateRuleSpecs(bp.rules);
+    if (errors.length) return check(14, '规则声明合法', false, 'error', errors.join('; '));
+    if (warnings.length) return check(14, '规则声明合法', false, 'warning', warnings.join('; '));
+    return check(14, '规则声明合法', true, 'error', String(bp.rules.length));
+  }
 
   private validGatewayToolUrl(value:string):boolean{try{const u=new URL(value),h=u.hostname;const privateHost=h==='localhost'||h==='127.0.0.1'||h==='::1'||/^10\./.test(h)||/^192\.168\./.test(h)||/^172\.(1[6-9]|2\d|3[01])\./.test(h)||!h.includes('.');return (u.protocol==='https:'||(u.protocol==='http:'&&privateHost))&&u.pathname.startsWith('/mcp-servers/');}catch{return false;}}
 }

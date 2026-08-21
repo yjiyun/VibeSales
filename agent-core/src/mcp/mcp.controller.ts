@@ -49,7 +49,12 @@ export class McpController {
         const requestId = randomUUID();
         const callArgs = { ...args, _ctx: { ...ctx, request_id: requestId } };
         const tool = String(req.params?.name ?? '');
-        const phase = server.replace('chatflows-p','P').toUpperCase(),agent=agentForMcpServer(server);
+        const phase = server.replace('chatflows-p','P').toUpperCase();
+        // submitExpertResult 的真实执行者是四位专家之一；默认 MCP_AGENT 把整个
+        // chatflows-p3c 归到 blueprint-compose，会把专家 span 错挂到合成节点上。
+        const roleArg=typeof args.role==='string'?args.role.trim():'';
+        const agent=tool==='submitExpertResult'&&['persona-expert','business-expert','skill-expert','tool-expert'].includes(roleArg)
+          ?roleArg:agentForMcpServer(server);
         const inputApproval=args.approval as Record<string,unknown>|undefined;
         this.trace.setFlow('mcp.' + server, requestId);
         this.trace.step('MCP', 'tool.call', {

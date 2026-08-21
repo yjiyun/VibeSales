@@ -197,7 +197,7 @@ create policy artifact_worker_write on artifact for insert with check (
    (current_user='worker_p2' and kind='match_result') or
    (current_user='worker_p3' and kind in ('guidance','personalized_package','flow_check')) or
    (current_user='worker_p3b' and kind in ('flow_yaml','flow_check')) or
-   (current_user='worker_p3c' and kind in ('blueprint','blueprint_check','expert_dispatch','expert_result')) or
+   (current_user='worker_p3c' and kind in ('blueprint','blueprint_draft','blueprint_check','expert_dispatch','expert_result')) or
    (current_user='worker_p4' and kind in ('import_result','dry_run','approval','evidence')) or
    (current_user='blueprint_admin' and kind='evidence' and written_by='blueprint-admin'))
 );

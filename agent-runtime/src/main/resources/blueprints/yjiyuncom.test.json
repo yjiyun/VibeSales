@@ -51,7 +51,7 @@
       }
     },
     {
-      "_说明": "已实现且有单测，但编排链还没有画像充分度的调用点。声明它只会在时间线留痕并产生一条 warning，不改变本轮行为。",
+      "_说明": "已接入编排链（orchestration:rule.profile.gate），与 follow-up-round-limit 同节点计算。这里只覆盖强制放行阈值，公式本身不可配。",
       "ruleCode": "profile-completeness",
       "enabled": true,
       "params": {
@@ -79,7 +79,7 @@
     "mcpServers": []
   },
   "runtime": {
-    "model": "deepseek-v4-flash-0731",
+    "model": "deepseek-v4-flash",
     "isolationScope": "USER",
     "maxContextTokens": 32000
   }
