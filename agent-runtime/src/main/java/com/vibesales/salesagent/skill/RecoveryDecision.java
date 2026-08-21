@@ -1,4 +1,4 @@
-package com.agentteams.salesagent.skill;
+package com.vibesales.salesagent.skill;
 
 /**
  * 恢复判断结果对象。

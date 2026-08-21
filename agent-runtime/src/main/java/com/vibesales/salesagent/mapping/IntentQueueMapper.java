@@ -1,7 +1,7 @@
-package com.agentteams.salesagent.mapping;
+package com.vibesales.salesagent.mapping;
 
 import com.fasterxml.jackson.databind.JsonNode;
-import com.agentteams.salesagent.tool.taskboard.IntentTaskSnapshot;
+import com.vibesales.salesagent.tool.taskboard.IntentTaskSnapshot;
 
 /**
  * 把 {@code GET /intent-queue} 的响应 DTO 转成 {@link IntentTaskSnapshot}。

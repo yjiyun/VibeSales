@@ -1,8 +1,8 @@
-package com.agentteams.salesagent.blueprint;
+package com.vibesales.salesagent.blueprint;
 
 import com.fasterxml.jackson.databind.JsonNode;
 import com.fasterxml.jackson.databind.ObjectMapper;
-import com.agentteams.salesagent.config.AppConfig;
+import com.vibesales.salesagent.config.AppConfig;
 import java.net.URI;
 import java.net.URLEncoder;
 import java.net.http.HttpClient;

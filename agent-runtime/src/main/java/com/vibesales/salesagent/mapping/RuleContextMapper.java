@@ -1,7 +1,7 @@
-package com.agentteams.salesagent.mapping;
+package com.vibesales.salesagent.mapping;
 
 import com.fasterxml.jackson.databind.JsonNode;
-import com.agentteams.salesagent.tool.rulecontext.RuleContextSnapshot;
+import com.vibesales.salesagent.tool.rulecontext.RuleContextSnapshot;
 import java.util.ArrayList;
 import java.util.List;
 

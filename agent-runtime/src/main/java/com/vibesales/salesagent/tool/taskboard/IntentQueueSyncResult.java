@@ -1,4 +1,4 @@
-package com.agentteams.salesagent.tool.taskboard;
+package com.vibesales.salesagent.tool.taskboard;
 
 /**
  * 任务板同步结果快照。

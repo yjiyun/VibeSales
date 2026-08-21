@@ -1,4 +1,4 @@
-package com.agentteams.salesagent.config;
+package com.vibesales.salesagent.config;
 
 /**
  * 当前正式项目的最小配置装配对象。

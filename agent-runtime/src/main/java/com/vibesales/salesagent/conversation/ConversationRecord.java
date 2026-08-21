@@ -1,4 +1,4 @@
-package com.agentteams.salesagent.conversation;
+package com.vibesales.salesagent.conversation;
 
 import java.time.Instant;
 

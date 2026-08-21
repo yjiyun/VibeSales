@@ -1,4 +1,4 @@
-package com.agentteams.salesagent.agent;
+package com.vibesales.salesagent.agent;
 
 /**
  * 网页接口返回给前端的统一响应对象。

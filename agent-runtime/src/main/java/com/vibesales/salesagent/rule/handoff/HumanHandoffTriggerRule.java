@@ -1,7 +1,7 @@
-package com.agentteams.salesagent.rule.handoff;
+package com.vibesales.salesagent.rule.handoff;
 
-import com.agentteams.salesagent.rule.Rule;
-import com.agentteams.salesagent.rule.RuleResult;
+import com.vibesales.salesagent.rule.Rule;
+import com.vibesales.salesagent.rule.RuleResult;
 
 /**
  * 场景卡片2的转人工硬触发条件，四类分散在各分支里的触发信号统一收口成一条 Pre-Flow 判断：

@@ -1,4 +1,4 @@
-package com.agentteams.salesagent.web;
+package com.vibesales.salesagent.web;
 
 import java.util.Collections;
 import java.util.LinkedHashMap;

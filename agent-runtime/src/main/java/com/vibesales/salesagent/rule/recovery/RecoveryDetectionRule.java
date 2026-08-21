@@ -1,7 +1,7 @@
-package com.agentteams.salesagent.rule.recovery;
+package com.vibesales.salesagent.rule.recovery;
 
-import com.agentteams.salesagent.rule.Rule;
-import com.agentteams.salesagent.rule.RuleResult;
+import com.vibesales.salesagent.rule.Rule;
+import com.vibesales.salesagent.rule.RuleResult;
 import java.util.List;
 import java.util.Locale;
 import java.util.regex.Pattern;

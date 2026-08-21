@@ -1,4 +1,4 @@
-package com.agentteams.salesagent.probe;
+package com.vibesales.salesagent.probe;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertTrue;

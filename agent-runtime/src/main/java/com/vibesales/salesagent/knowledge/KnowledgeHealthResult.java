@@ -1,4 +1,4 @@
-package com.agentteams.salesagent.knowledge;
+package com.vibesales.salesagent.knowledge;
 
 /**
  * 百炼知识库健康检查结果。

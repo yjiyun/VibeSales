@@ -1,4 +1,4 @@
-package com.agentteams.salesagent.blueprint;
+package com.vibesales.salesagent.blueprint;
 
 import java.io.IOException;
 import java.io.InputStream;

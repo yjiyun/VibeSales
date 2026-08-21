@@ -1,8 +1,8 @@
-package com.agentteams.salesagent.rule.profile;
+package com.vibesales.salesagent.rule.profile;
 
-import com.agentteams.salesagent.rule.Rule;
-import com.agentteams.salesagent.rule.RuleResult;
-import com.agentteams.salesagent.tool.profile.CustomerProfileSnapshot;
+import com.vibesales.salesagent.rule.Rule;
+import com.vibesales.salesagent.rule.RuleResult;
+import com.vibesales.salesagent.tool.profile.CustomerProfileSnapshot;
 import java.util.ArrayList;
 import java.util.List;
 

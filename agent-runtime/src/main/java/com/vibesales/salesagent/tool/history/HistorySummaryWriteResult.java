@@ -1,4 +1,4 @@
-package com.agentteams.salesagent.tool.history;
+package com.vibesales.salesagent.tool.history;
 
 /**
  * 历史摘要写回结果快照。

@@ -1,4 +1,4 @@
-package com.agentteams.salesagent.knowledge;
+package com.vibesales.salesagent.knowledge;
 
 import com.aliyun.bailian20231229.Client;
 import com.aliyun.bailian20231229.models.ListIndexFileDetailsRequest;
@@ -8,7 +8,7 @@ import com.aliyun.bailian20231229.models.RetrieveResponse;
 import com.aliyun.teaopenapi.models.Config;
 import com.fasterxml.jackson.databind.JsonNode;
 import com.fasterxml.jackson.databind.ObjectMapper;
-import com.agentteams.salesagent.config.AppConfig;
+import com.vibesales.salesagent.config.AppConfig;
 
 /**
  * 百炼知识库最小健康检查服务。

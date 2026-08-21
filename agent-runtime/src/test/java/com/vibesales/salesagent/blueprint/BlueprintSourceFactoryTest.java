@@ -1,10 +1,10 @@
-package com.agentteams.salesagent.blueprint;
+package com.vibesales.salesagent.blueprint;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertThrows;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
-import com.agentteams.salesagent.config.AppConfig;
+import com.vibesales.salesagent.config.AppConfig;
 import org.junit.jupiter.api.Test;
 
 class BlueprintSourceFactoryTest {

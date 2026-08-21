@@ -1,4 +1,4 @@
-package com.agentteams.salesagent.rule;
+package com.vibesales.salesagent.rule;
 
 /**
  * Rule 的统一判断结果（见 07-Rule资产设计与接口规范.md 第2节）。

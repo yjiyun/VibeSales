@@ -1,4 +1,4 @@
-package com.agentteams.salesagent.web;
+package com.vibesales.salesagent.web;
 
 /**
  * 平台创建会话接口的返回体。

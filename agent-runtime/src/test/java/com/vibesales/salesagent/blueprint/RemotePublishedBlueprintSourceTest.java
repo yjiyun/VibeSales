@@ -1,11 +1,11 @@
-package com.agentteams.salesagent.blueprint;
+package com.vibesales.salesagent.blueprint;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
 import com.fasterxml.jackson.databind.ObjectMapper;
 import com.sun.net.httpserver.HttpServer;
-import com.agentteams.salesagent.config.AppConfig;
+import com.vibesales.salesagent.config.AppConfig;
 import java.io.IOException;
 import java.net.InetSocketAddress;
 import java.nio.charset.StandardCharsets;

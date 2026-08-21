@@ -1,4 +1,4 @@
-package com.agentteams.salesagent.web;
+package com.vibesales.salesagent.web;
 
 /**
  * run 创建接口返回体。

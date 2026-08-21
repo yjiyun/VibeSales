@@ -1,4 +1,4 @@
-package com.agentteams.salesagent.tool.history;
+package com.vibesales.salesagent.tool.history;
 
 /**
  * 写回历史摘要所需的最小字段。

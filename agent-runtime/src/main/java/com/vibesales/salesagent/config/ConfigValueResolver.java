@@ -1,4 +1,4 @@
-package com.agentteams.salesagent.config;
+package com.vibesales.salesagent.config;
 
 /**
  * 统一读取运行配置。

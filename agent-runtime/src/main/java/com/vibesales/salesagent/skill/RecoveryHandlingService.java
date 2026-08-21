@@ -1,9 +1,9 @@
-package com.agentteams.salesagent.skill;
+package com.vibesales.salesagent.skill;
 
-import com.agentteams.salesagent.rule.RuleResult;
-import com.agentteams.salesagent.rule.recovery.RecoveryDetectionRule;
-import com.agentteams.salesagent.tool.history.HistorySummarySnapshot;
-import com.agentteams.salesagent.tool.taskboard.IntentTaskSnapshot;
+import com.vibesales.salesagent.rule.RuleResult;
+import com.vibesales.salesagent.rule.recovery.RecoveryDetectionRule;
+import com.vibesales.salesagent.tool.history.HistorySummarySnapshot;
+import com.vibesales.salesagent.tool.taskboard.IntentTaskSnapshot;
 import java.util.List;
 
 /**

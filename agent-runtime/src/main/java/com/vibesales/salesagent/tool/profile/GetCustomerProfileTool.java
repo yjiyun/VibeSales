@@ -1,9 +1,9 @@
-package com.agentteams.salesagent.tool.profile;
+package com.vibesales.salesagent.tool.profile;
 
-import com.agentteams.salesagent.context.CustomerContext;
-import com.agentteams.salesagent.integration.runtime.RuntimeApiResponse;
-import com.agentteams.salesagent.mapping.CustomerProfileMapper;
-import com.agentteams.salesagent.tool.RuntimeToolScope;
+import com.vibesales.salesagent.context.CustomerContext;
+import com.vibesales.salesagent.integration.runtime.RuntimeApiResponse;
+import com.vibesales.salesagent.mapping.CustomerProfileMapper;
+import com.vibesales.salesagent.tool.RuntimeToolScope;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 

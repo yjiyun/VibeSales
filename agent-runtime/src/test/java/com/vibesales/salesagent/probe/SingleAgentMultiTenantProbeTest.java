@@ -1,4 +1,4 @@
-package com.agentteams.salesagent.probe;
+package com.vibesales.salesagent.probe;
 
 import static org.junit.jupiter.api.Assertions.assertFalse;
 import static org.junit.jupiter.api.Assertions.assertTrue;
@@ -274,7 +274,7 @@ class SingleAgentMultiTenantProbeTest {
                         .filesystem(new LocalFilesystemSpec().isolationScope(IsolationScope.USER))
                         .stateStore(new InMemoryAgentStateStore())
                         .skillRepository(
-                                new com.agentteams.salesagent.blueprint.InMemorySkillRepository(
+                                new com.vibesales.salesagent.blueprint.InMemorySkillRepository(
                                         "probe", List.of(shared)))
                         .disableShellTool()
                         .disableFilesystemTools()

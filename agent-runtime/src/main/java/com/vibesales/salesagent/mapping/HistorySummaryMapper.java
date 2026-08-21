@@ -1,7 +1,7 @@
-package com.agentteams.salesagent.mapping;
+package com.vibesales.salesagent.mapping;
 
 import com.fasterxml.jackson.databind.JsonNode;
-import com.agentteams.salesagent.tool.history.HistorySummarySnapshot;
+import com.vibesales.salesagent.tool.history.HistorySummarySnapshot;
 
 /**
  * 把 {@code GET /history-summary} 的响应 DTO 转成 {@link HistorySummarySnapshot}。

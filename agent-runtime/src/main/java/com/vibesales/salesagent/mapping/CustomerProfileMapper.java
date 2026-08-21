@@ -1,7 +1,7 @@
-package com.agentteams.salesagent.mapping;
+package com.vibesales.salesagent.mapping;
 
 import com.fasterxml.jackson.databind.JsonNode;
-import com.agentteams.salesagent.tool.profile.CustomerProfileSnapshot;
+import com.vibesales.salesagent.tool.profile.CustomerProfileSnapshot;
 
 /**
  * 把 {@code GET /customer-profile} 的响应 DTO 转成 {@link CustomerProfileSnapshot}。

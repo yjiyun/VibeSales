@@ -1,9 +1,9 @@
-package com.agentteams.salesagent.conversation;
+package com.vibesales.salesagent.conversation;
 
 import com.fasterxml.jackson.core.JsonProcessingException;
 import com.fasterxml.jackson.databind.JsonNode;
 import com.fasterxml.jackson.databind.ObjectMapper;
-import com.agentteams.salesagent.config.AppConfig;
+import com.vibesales.salesagent.config.AppConfig;
 import java.time.Instant;
 
 /**

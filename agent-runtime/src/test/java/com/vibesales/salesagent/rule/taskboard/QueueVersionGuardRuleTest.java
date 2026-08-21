@@ -1,9 +1,9 @@
-package com.agentteams.salesagent.rule.taskboard;
+package com.vibesales.salesagent.rule.taskboard;
 
 import static org.junit.jupiter.api.Assertions.assertFalse;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
-import com.agentteams.salesagent.rule.RuleResult;
+import com.vibesales.salesagent.rule.RuleResult;
 import org.junit.jupiter.api.Test;
 
 class QueueVersionGuardRuleTest {

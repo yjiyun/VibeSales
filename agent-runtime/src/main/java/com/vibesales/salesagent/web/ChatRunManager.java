@@ -1,7 +1,7 @@
-package com.agentteams.salesagent.web;
+package com.vibesales.salesagent.web;
 
-import com.agentteams.salesagent.agent.ChatResponse;
-import com.agentteams.salesagent.progress.ExecutionProgressListener;
+import com.vibesales.salesagent.agent.ChatResponse;
+import com.vibesales.salesagent.progress.ExecutionProgressListener;
 import java.time.Instant;
 import java.util.ArrayList;
 import java.util.Comparator;

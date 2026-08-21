@@ -1,11 +1,11 @@
-package com.agentteams.salesagent.mapping;
+package com.vibesales.salesagent.mapping;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertFalse;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
 import com.fasterxml.jackson.databind.ObjectMapper;
-import com.agentteams.salesagent.tool.rulecontext.RuleContextSnapshot;
+import com.vibesales.salesagent.tool.rulecontext.RuleContextSnapshot;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
 

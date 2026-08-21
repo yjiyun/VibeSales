@@ -1,4 +1,4 @@
-package com.agentteams.salesagent.tool.taskboard;
+package com.vibesales.salesagent.tool.taskboard;
 
 import java.util.Map;
 

@@ -1,4 +1,4 @@
-package com.agentteams.salesagent.agent;
+package com.vibesales.salesagent.agent;
 
 import java.io.IOException;
 import java.io.InputStream;

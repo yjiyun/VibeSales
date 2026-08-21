@@ -1,4 +1,4 @@
-package com.agentteams.salesagent.context;
+package com.vibesales.salesagent.context;
 
 import io.agentscope.core.agent.RuntimeContext;
 

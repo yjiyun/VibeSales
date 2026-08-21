@@ -1,9 +1,9 @@
-package com.agentteams.salesagent.integration.runtime;
+package com.vibesales.salesagent.integration.runtime;
 
 import com.fasterxml.jackson.databind.JsonNode;
 import com.fasterxml.jackson.databind.ObjectMapper;
-import com.agentteams.salesagent.config.AppConfig;
-import com.agentteams.salesagent.tool.telemetry.ToolTelemetry;
+import com.vibesales.salesagent.config.AppConfig;
+import com.vibesales.salesagent.tool.telemetry.ToolTelemetry;
 import java.net.URI;
 import java.net.URLEncoder;
 import java.net.http.HttpClient;

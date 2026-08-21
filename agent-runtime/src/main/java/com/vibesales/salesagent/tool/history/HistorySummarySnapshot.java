@@ -1,4 +1,4 @@
-package com.agentteams.salesagent.tool.history;
+package com.vibesales.salesagent.tool.history;
 
 /**
  * 历史摘要 Tool 的返回快照对象。

@@ -1,7 +1,7 @@
-package com.agentteams.salesagent.web;
+package com.vibesales.salesagent.web;
 
 import com.fasterxml.jackson.annotation.JsonProperty;
-import com.agentteams.salesagent.blueprint.BlueprintSelection;
+import com.vibesales.salesagent.blueprint.BlueprintSelection;
 
 /**
  * 前端聊天请求体。

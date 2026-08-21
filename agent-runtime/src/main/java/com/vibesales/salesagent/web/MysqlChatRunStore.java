@@ -1,10 +1,10 @@
-package com.agentteams.salesagent.web;
+package com.vibesales.salesagent.web;
 
 import com.fasterxml.jackson.core.type.TypeReference;
 import com.fasterxml.jackson.databind.JsonNode;
 import com.fasterxml.jackson.databind.ObjectMapper;
-import com.agentteams.salesagent.agent.ChatResponse;
-import com.agentteams.salesagent.config.AppConfig;
+import com.vibesales.salesagent.agent.ChatResponse;
+import com.vibesales.salesagent.config.AppConfig;
 import java.sql.Connection;
 import java.sql.DriverManager;
 import java.sql.PreparedStatement;

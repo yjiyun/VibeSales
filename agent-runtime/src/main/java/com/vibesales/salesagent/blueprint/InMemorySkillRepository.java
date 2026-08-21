@@ -1,4 +1,4 @@
-package com.agentteams.salesagent.blueprint;
+package com.vibesales.salesagent.blueprint;
 
 import io.agentscope.core.skill.AgentSkill;
 import io.agentscope.core.skill.repository.AgentSkillRepository;

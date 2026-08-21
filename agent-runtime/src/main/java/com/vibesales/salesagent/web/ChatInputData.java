@@ -1,4 +1,4 @@
-package com.agentteams.salesagent.web;
+package com.vibesales.salesagent.web;
 
 import com.fasterxml.jackson.annotation.JsonProperty;
 

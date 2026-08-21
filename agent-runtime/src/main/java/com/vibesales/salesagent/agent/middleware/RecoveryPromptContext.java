@@ -1,9 +1,9 @@
-package com.agentteams.salesagent.agent.middleware;
+package com.vibesales.salesagent.agent.middleware;
 
-import com.agentteams.salesagent.skill.RecoveryDecision;
-import com.agentteams.salesagent.tool.history.HistorySummarySnapshot;
-import com.agentteams.salesagent.tool.profile.CustomerProfileSnapshot;
-import com.agentteams.salesagent.tool.taskboard.IntentTaskSnapshot;
+import com.vibesales.salesagent.skill.RecoveryDecision;
+import com.vibesales.salesagent.tool.history.HistorySummarySnapshot;
+import com.vibesales.salesagent.tool.profile.CustomerProfileSnapshot;
+import com.vibesales.salesagent.tool.taskboard.IntentTaskSnapshot;
 
 /**
  * 恢复链路写入 RuntimeContext 的提示词上下文。

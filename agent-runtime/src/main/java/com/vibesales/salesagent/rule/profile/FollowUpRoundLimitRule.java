@@ -1,8 +1,8 @@
-package com.agentteams.salesagent.rule.profile;
+package com.vibesales.salesagent.rule.profile;
 
-import com.agentteams.salesagent.rule.Rule;
-import com.agentteams.salesagent.rule.RuleResult;
-import com.agentteams.salesagent.tool.profile.CustomerProfileSnapshot;
+import com.vibesales.salesagent.rule.Rule;
+import com.vibesales.salesagent.rule.RuleResult;
+import com.vibesales.salesagent.tool.profile.CustomerProfileSnapshot;
 
 /**
  * 场景卡片1的追问轮次上限规则："同一推荐主题连续追问不超过3条"，追问满3轮后强制停止，

@@ -1,4 +1,4 @@
-package com.agentteams.salesagent.blueprint;
+package com.vibesales.salesagent.blueprint;
 
 /**
  * 测试链路使用的 Blueprint 选择器。

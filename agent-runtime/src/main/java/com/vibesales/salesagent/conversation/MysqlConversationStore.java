@@ -1,6 +1,6 @@
-package com.agentteams.salesagent.conversation;
+package com.vibesales.salesagent.conversation;
 
-import com.agentteams.salesagent.config.AppConfig;
+import com.vibesales.salesagent.config.AppConfig;
 import java.sql.Connection;
 import java.sql.DriverManager;
 import java.sql.PreparedStatement;

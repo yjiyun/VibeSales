@@ -32,7 +32,7 @@ if [ ! -f "$AGENT_JAVA_AGENT_JAR" ]; then
 fi
 
 APP_NAME="${AGENT_APP_NAME:-sales-customer-agent}"
-MAIN_CLASS="com.agentteams.salesagent.app.SalesCustomerAgentApplication"
+MAIN_CLASS="com.vibesales.salesagent.app.SalesCustomerAgentApplication"
 
 echo "编译项目..."
 mvn -q -DskipTests compile

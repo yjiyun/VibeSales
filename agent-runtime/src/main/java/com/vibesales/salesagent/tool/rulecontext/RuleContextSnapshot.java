@@ -1,4 +1,4 @@
-package com.agentteams.salesagent.tool.rulecontext;
+package com.vibesales.salesagent.tool.rulecontext;
 
 import java.util.List;
 

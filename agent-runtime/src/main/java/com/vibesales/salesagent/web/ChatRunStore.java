@@ -1,6 +1,6 @@
-package com.agentteams.salesagent.web;
+package com.vibesales.salesagent.web;
 
-import com.agentteams.salesagent.agent.ChatResponse;
+import com.vibesales.salesagent.agent.ChatResponse;
 import java.time.Instant;
 import java.util.List;
 import java.util.Optional;

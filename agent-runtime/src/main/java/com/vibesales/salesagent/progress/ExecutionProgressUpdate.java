@@ -1,4 +1,4 @@
-package com.agentteams.salesagent.progress;
+package com.vibesales.salesagent.progress;
 
 import java.util.Collections;
 import java.util.LinkedHashMap;

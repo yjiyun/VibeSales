@@ -1,7 +1,7 @@
-package com.agentteams.salesagent.rule.closure;
+package com.vibesales.salesagent.rule.closure;
 
-import com.agentteams.salesagent.rule.Rule;
-import com.agentteams.salesagent.rule.RuleResult;
+import com.vibesales.salesagent.rule.Rule;
+import com.vibesales.salesagent.rule.RuleResult;
 import java.util.ArrayList;
 import java.util.List;
 

@@ -1,4 +1,4 @@
-package com.agentteams.salesagent.skill;
+package com.vibesales.salesagent.skill;
 
 import io.agentscope.core.skill.AgentSkill;
 import io.agentscope.core.skill.repository.ClasspathSkillRepository;

@@ -1,4 +1,4 @@
-package com.agentteams.salesagent.config;
+package com.vibesales.salesagent.config;
 
 import java.io.IOException;
 import java.nio.charset.StandardCharsets;

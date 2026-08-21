@@ -1,4 +1,4 @@
-package com.agentteams.salesagent.tool.session;
+package com.vibesales.salesagent.tool.session;
 
 /**
  * {@code createOrResumeSession} 的最小业务快照。

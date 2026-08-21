@@ -1,10 +1,10 @@
-package com.agentteams.salesagent.rule.profile;
+package com.vibesales.salesagent.rule.profile;
 
 import static org.junit.jupiter.api.Assertions.assertFalse;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
-import com.agentteams.salesagent.rule.RuleResult;
-import com.agentteams.salesagent.tool.profile.CustomerProfileSnapshot;
+import com.vibesales.salesagent.rule.RuleResult;
+import com.vibesales.salesagent.tool.profile.CustomerProfileSnapshot;
 import org.junit.jupiter.api.Test;
 
 class FollowUpRoundLimitRuleTest {

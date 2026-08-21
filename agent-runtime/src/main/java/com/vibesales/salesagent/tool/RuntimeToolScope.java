@@ -1,8 +1,8 @@
-package com.agentteams.salesagent.tool;
+package com.vibesales.salesagent.tool;
 
-import com.agentteams.salesagent.config.AppConfig;
-import com.agentteams.salesagent.context.CustomerContext;
-import com.agentteams.salesagent.integration.runtime.MarketingAgentRuntimeApiClient;
+import com.vibesales.salesagent.config.AppConfig;
+import com.vibesales.salesagent.context.CustomerContext;
+import com.vibesales.salesagent.integration.runtime.MarketingAgentRuntimeApiClient;
 
 /**
  * 只读 Tool 共享的后端调用作用域。

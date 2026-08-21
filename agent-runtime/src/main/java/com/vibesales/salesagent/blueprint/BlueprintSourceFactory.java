@@ -1,6 +1,6 @@
-package com.agentteams.salesagent.blueprint;
+package com.vibesales.salesagent.blueprint;
 
-import com.agentteams.salesagent.config.AppConfig;
+import com.vibesales.salesagent.config.AppConfig;
 
 /** 统一装配 Blueprint 来源。 */
 public final class BlueprintSourceFactory {

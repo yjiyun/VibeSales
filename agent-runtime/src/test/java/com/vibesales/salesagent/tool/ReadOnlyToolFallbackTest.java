@@ -1,18 +1,18 @@
-package com.agentteams.salesagent.tool;
+package com.vibesales.salesagent.tool;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertFalse;
 import static org.junit.jupiter.api.Assertions.assertNotNull;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
-import com.agentteams.salesagent.config.AppConfig;
-import com.agentteams.salesagent.context.CustomerContext;
-import com.agentteams.salesagent.integration.runtime.MarketingAgentRuntimeApiClient;
-import com.agentteams.salesagent.tool.history.GetHistorySummaryTool;
-import com.agentteams.salesagent.tool.profile.GetCustomerProfileTool;
-import com.agentteams.salesagent.tool.rulecontext.GetRuleContextTool;
-import com.agentteams.salesagent.tool.rulecontext.RuleContextSnapshot;
-import com.agentteams.salesagent.tool.taskboard.GetIntentQueueTool;
+import com.vibesales.salesagent.config.AppConfig;
+import com.vibesales.salesagent.context.CustomerContext;
+import com.vibesales.salesagent.integration.runtime.MarketingAgentRuntimeApiClient;
+import com.vibesales.salesagent.tool.history.GetHistorySummaryTool;
+import com.vibesales.salesagent.tool.profile.GetCustomerProfileTool;
+import com.vibesales.salesagent.tool.rulecontext.GetRuleContextTool;
+import com.vibesales.salesagent.tool.rulecontext.RuleContextSnapshot;
+import com.vibesales.salesagent.tool.taskboard.GetIntentQueueTool;
 import java.time.Duration;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;

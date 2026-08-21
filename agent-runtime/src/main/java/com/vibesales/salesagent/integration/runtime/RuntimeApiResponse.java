@@ -1,4 +1,4 @@
-package com.agentteams.salesagent.integration.runtime;
+package com.vibesales.salesagent.integration.runtime;
 
 import com.fasterxml.jackson.databind.JsonNode;
 

@@ -1,4 +1,4 @@
-package com.agentteams.salesagent.tool.profile;
+package com.vibesales.salesagent.tool.profile;
 
 /**
  * 客户画像 Tool 的返回对象。

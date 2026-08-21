@@ -1,4 +1,4 @@
-package com.agentteams.salesagent.context;
+package com.vibesales.salesagent.context;
 
 /**
  * 客服链路的业务上下文对象。

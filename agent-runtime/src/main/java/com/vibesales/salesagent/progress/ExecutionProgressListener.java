@@ -1,4 +1,4 @@
-package com.agentteams.salesagent.progress;
+package com.vibesales.salesagent.progress;
 
 /**
  * 编排层执行进度监听器。

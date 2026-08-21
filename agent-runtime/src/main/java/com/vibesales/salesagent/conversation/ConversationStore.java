@@ -1,4 +1,4 @@
-package com.agentteams.salesagent.conversation;
+package com.vibesales.salesagent.conversation;
 
 /**
  * 平台会话存储抽象。

@@ -1,4 +1,4 @@
-package com.agentteams.salesagent.rule;
+package com.vibesales.salesagent.rule;
 
 /**
  * 所有 Rule 类的统一接口契约（见 07-Rule资产设计与接口规范.md 第2节）。

@@ -1,7 +1,7 @@
-package com.agentteams.salesagent.rule.taskboard;
+package com.vibesales.salesagent.rule.taskboard;
 
-import com.agentteams.salesagent.rule.Rule;
-import com.agentteams.salesagent.rule.RuleResult;
+import com.vibesales.salesagent.rule.Rule;
+import com.vibesales.salesagent.rule.RuleResult;
 
 /**
  * {@code syncIntentQueue} 调用前后的 {@code queueVersion} 乐观锁校验。

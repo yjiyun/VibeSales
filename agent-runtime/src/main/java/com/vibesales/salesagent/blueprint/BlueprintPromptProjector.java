@@ -1,4 +1,4 @@
-package com.agentteams.salesagent.blueprint;
+package com.vibesales.salesagent.blueprint;
 
 /**
  * 把 Blueprint 的 prompt 段投影成系统提示词。

@@ -1,9 +1,9 @@
-package com.agentteams.salesagent.app;
+package com.vibesales.salesagent.app;
 
 import com.sun.net.httpserver.HttpServer;
-import com.agentteams.salesagent.config.AppConfig;
-import com.agentteams.salesagent.config.EnvFileLoader;
-import com.agentteams.salesagent.web.WebServer;
+import com.vibesales.salesagent.config.AppConfig;
+import com.vibesales.salesagent.config.EnvFileLoader;
+import com.vibesales.salesagent.web.WebServer;
 import java.io.IOException;
 import java.nio.file.Paths;
 
@@ -27,7 +27,7 @@ public final class SalesCustomerAgentApplication {
 
         System.out.println("sales-customer-agent bootstrap ready");
         System.out.println("phase: P1-minimal-loop");
-        System.out.println("package: com.agentteams.salesagent");
+        System.out.println("package: com.vibesales.salesagent");
         System.out.println("strategy: Skill-first + Rule-in-Code + Tool-as-Boundary");
         System.out.println("model name: " + config.modelName());
         System.out.println("model base url: " + fallback(config.modelBaseUrl()));
@@ -44,7 +44,7 @@ public final class SalesCustomerAgentApplication {
     }
 
     private static int resolvePort() {
-        String value = com.agentteams.salesagent.config.ConfigValueResolver.get("AGENT_WEB_PORT");
+        String value = com.vibesales.salesagent.config.ConfigValueResolver.get("AGENT_WEB_PORT");
         if (value == null || value.isBlank()) {
             return 18080;
         }
